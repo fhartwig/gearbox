@@ -1,0 +1,30 @@
+[package]
+
+name = "gearbox"
+version = "0.0.1"
+authors = ["Florian Hartwig <florian.j.hartwig@gmail.com>"]
+
+[dependencies]
+url = "*"
+log = "*"
+rand = "*"
+byteorder = "*"
+
+[dependencies.hyper]
+git = "https://github.com/hyperium/hyper"
+features = ["nightly"]
+
+[dependencies.rust-crypto]
+git = "https://github.com/DaGenix/rust-crypto"
+
+[dependencies.mio]
+git = "https://github.com/carllerche/mio"
+
+[profile.dev]
+debug = false
+
+[profile.test]
+debug = false
+
+[dev-dependencies]
+nix = "*"
