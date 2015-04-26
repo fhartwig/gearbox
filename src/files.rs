@@ -241,7 +241,7 @@ mod tests {
         let mut cache: HandleCache<W> = HandleCache::new(&torrent);
         let f = cache.get(0);
         f.write(b"foo").unwrap();
-        remove_file(&torrent.files[0].path);
+        remove_file(&torrent.files()[0].path);
     }
 
     /*
