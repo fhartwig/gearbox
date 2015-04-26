@@ -13,6 +13,8 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::iter::repeat;
 
+use types::PieceIndex;
+
 pub struct FileInfo {
     pub path: PathBuf,
     pub length: u64, 
@@ -84,13 +86,13 @@ impl TorrentInfo {
     }
 
     // panics when passed an invalid piece index
-    pub fn get_piece_length(&self, piece_index: u32) -> u32 {
-        if piece_index > self.piece_count() {
+    pub fn get_piece_length(&self, piece_index: PieceIndex) -> u32 {
+        if piece_index.0 as u32 > self.piece_count() {
             panic!("get_piece_length: Bad piece index");
         }
         min(self.piece_length,
             (self.total_size -
-                (piece_index as u64 * self.piece_length as u64))
+                (piece_index.0 as u64 * self.piece_length as u64))
                 as u32
         )
     }
@@ -99,16 +101,15 @@ impl TorrentInfo {
         self.hashes.len() as u32 / 20
     }
 
-    pub fn map_block(&self, piece_index: u32, offset: u32, length: u32)
-            //-> (Path, usize, usize)> {
-            -> FileSectionIter {
+    pub fn map_block(&self, piece_index: PieceIndex, offset: u32, length: u32)
+                     -> FileSectionIter {
         FileSectionIter::new(piece_index, offset, length, self)
     }
 
-    pub fn get_piece_hash(&self, piece_index: u32) -> &[u8] {
-        let offset = piece_index as usize * 20;
+    pub fn get_piece_hash(&self, piece_index: PieceIndex) -> &[u8] {
+        let offset = piece_index.0 as usize * 20;
         if offset >= self.hashes.len() {
-            panic!("Invalid piece index: {}", piece_index);
+            panic!("Invalid piece index: {:?}", piece_index);
         }
         &self.hashes[offset..offset + 20]
     }
@@ -124,7 +125,8 @@ impl TorrentInfo {
         let mut cur_file_index = 0;
         let mut cur_file_handle = first_handle;
         let mut piece_hash = [0;20];
-        'pieces: for piece_index in (0u32..self.piece_count()) {
+        'pieces: for i in (0u32..self.piece_count()) {
+            let piece_index = PieceIndex(i);
             let mut offset_in_piece = 0;
             for file_section in self.map_block(piece_index, 0,
                                         self.get_piece_length(piece_index)) {
@@ -213,10 +215,10 @@ impl <'a> Iterator for FileSectionIter<'a> {
 }
 
 impl <'a> FileSectionIter<'a> {
-    fn new(piece_index: u32, offset: u32, length: u32,
+    fn new(piece_index: PieceIndex, offset: u32, length: u32,
            torrent: &'a TorrentInfo) -> FileSectionIter<'a> {
         let mut remaining_offset =
-            piece_index as u64 * torrent.piece_length as u64 + offset as u64;
+            piece_index.0 as u64 * torrent.piece_length as u64 + offset as u64;
         let mut file_index = 0;
         loop {
             let cur_file_length = torrent.files[file_index].length;

@@ -1,11 +1,11 @@
 use mio::buf::{RingBuf, Buf};
 use mio;
 
-// TODO: make this a newtype
-pub type PieceIndex = u32;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PieceIndex(pub u32);
 
-// TODO: make this a newtype
-pub type ConnectionId = u32;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConnectionId(pub u32);
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockRequest {
@@ -14,7 +14,11 @@ pub struct BlockRequest {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BlockInfo { pub piece_index: u32, pub offset: u32, pub length: u32 }
+pub struct BlockInfo {
+    pub piece_index: PieceIndex,
+    pub offset: u32,
+    pub length: u32
+}
 
 pub struct BlockFromDisk {
     pub receiver: BlockReceiver,

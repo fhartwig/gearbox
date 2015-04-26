@@ -160,7 +160,7 @@ pub struct PeerConnection {
     currently_downloading_piece: Option<CurrentPieceInfo>,
     // the (incremental, current) sha1 hash of the piece
     current_piece_hash: Sha1,
-    conn_id: u32,
+    conn_id: ConnectionId,
     // number of blocks requested by the peer that we still have to deliver
     blocks_requested_by_peer: u8,
     token: Token
@@ -239,8 +239,8 @@ const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 const CONCURRENT_REQUESTS_PER_PEER: u8 = 8;
 
 impl PeerConnection {
-    fn new(peer_conn: NonBlock<TcpStream>, torrent: &TorrentInfo, id: u32)
-          -> PeerConnection {
+    fn new(peer_conn: NonBlock<TcpStream>, torrent: &TorrentInfo,
+           id: ConnectionId) -> PeerConnection {
         PeerConnection {
             conn_state: ConnectionState::new(),
             conn: peer_conn,
@@ -424,6 +424,7 @@ impl PeerConnection {
         if piece_index >= common.torrent.piece_count() {
             return Err(MsgError::PieceIndexTooLarge);
         }
+        let piece_index = PieceIndex(piece_index);
         self.peers_pieces.set_true(piece_index);
         self.new_piece_available(Some(piece_index), common);
         Ok(())
@@ -465,7 +466,9 @@ impl PeerConnection {
                 for bit_index in (0..8) {
                     let has_piece = (byte >> (7 - bit_index)) & 0x01 == 0x01;
                     if has_piece {
-                        self.peers_pieces.set_true(bit_offset + bit_index as u32);
+                        self.peers_pieces.set_true(
+                            PieceIndex(bit_offset + bit_index as u32)
+                        );
                     }
                 }
                 bit_offset += 8;
@@ -478,24 +481,29 @@ impl PeerConnection {
     fn handle_request(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
         println!("In PeerConnection::handle_request");
         let mut reader = &self.recv_buf.bytes()[..12];
-        let block = BlockInfo {
-            piece_index: reader.read_u32::<BigEndian>().unwrap(),
-            offset: reader.read_u32::<BigEndian>().unwrap(),
-            length: reader.read_u32::<BigEndian>().unwrap()
-        };
-        if block.piece_index > common.torrent.piece_count() {
+        let piece_index = reader.read_u32::<BigEndian>().unwrap();
+        let offset = reader.read_u32::<BigEndian>().unwrap();
+        let length = reader.read_u32::<BigEndian>().unwrap();
+
+        if piece_index > common.torrent.piece_count() {
             return Err(MsgError::PieceIndexTooLarge);
         }
-        if !common.our_pieces.get(block.piece_index) {
+        if !common.our_pieces.get(PieceIndex(piece_index)) {
             return Err(MsgError::PieceNotAvailable);
         }
-        let piece_length = common.torrent.get_piece_length(block.piece_index);
-        if block.length > 2u32.pow(14) || block.length > piece_length {
+        let expected_length =
+            common.torrent.get_piece_length(PieceIndex(piece_index));
+        if length > 2u32.pow(14) || length > expected_length {
             return Err(MsgError::RequestedBlockTooLong);
         }
-        if block.offset as u64 + block.length as u64 > piece_length as u64 {
+        if offset as u64 + length as u64 > expected_length as u64 {
             return Err(MsgError::BadOffsetLengthCombination);
         }
+        let block = BlockInfo {
+            piece_index: PieceIndex(piece_index),
+            offset: offset,
+            length: length
+        };
 
         // XXX: if peer is not choked and we're not already waiting for enough
             // blocks from piece reader thread:
@@ -526,7 +534,8 @@ impl PeerConnection {
         let block_info = {
             let mut reader: &[u8] = old_buf.bytes();
             BlockInfo {
-                piece_index: reader.read_u32::<BigEndian>().unwrap(),
+                // TODO: check that block info is valid
+                piece_index: PieceIndex(reader.read_u32::<BigEndian>().unwrap()),
                 offset: reader.read_u32::<BigEndian>().unwrap(),
                 length: msg_length as u32 - 8
             }
@@ -562,8 +571,9 @@ impl PeerConnection {
         println!("In PeerConnection::cancel_block");
         // parse piece index, offset, length from message
         let mut reader = &self.recv_buf.bytes()[msg_offset..msg_offset + 12];
+        // TODO: validate BlockInfo fields
         let block_info = BlockInfo {
-            piece_index: reader.read_u32::<BigEndian>().unwrap(),
+            piece_index: PieceIndex(reader.read_u32::<BigEndian>().unwrap()),
             offset: reader.read_u32::<BigEndian>().unwrap(),
             length: reader.read_u32::<BigEndian>().unwrap()
         };
@@ -731,7 +741,7 @@ impl PeerMsg {
             Have(index) => {
                 try!(writer.write_u32::<BigEndian>(1 + 4));
                 try!(writer.write_u8(4));
-                try!(writer.write_u32::<BigEndian>(index));
+                try!(writer.write_u32::<BigEndian>(index.0));
             },
             BitField => {
                 let bytes = common.our_pieces.to_bytes();
@@ -744,7 +754,7 @@ impl PeerMsg {
             Request(block_info) => {
                 try!(writer.write_u32::<BigEndian>(1 + 4 + 4 + 4));
                 try!(writer.write_u8(6));
-                try!(writer.write_u32::<BigEndian>(block_info.piece_index));
+                try!(writer.write_u32::<BigEndian>(block_info.piece_index.0));
                 try!(writer.write_u32::<BigEndian>(block_info.offset));
                 try!(writer.write_u32::<BigEndian>(block_info.length));
             }/*,
@@ -851,10 +861,10 @@ impl <'a>PeerEventHandler<'a> {
         peer_conn_ref.write_messages(&self.common_info);
     }
 
-    fn next_conn_id(&mut self) -> u32 {
+    fn next_conn_id(&mut self) -> ConnectionId {
         let conn_id = self.cur_conn_id;
         self.cur_conn_id += 1;
-        conn_id
+        ConnectionId(conn_id)
     }
 
     fn handle_finished_piece(&mut self, piece_index: PieceIndex) {

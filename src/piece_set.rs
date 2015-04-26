@@ -39,18 +39,18 @@ impl PieceSet {
 
     /// panics if index is out of bounds
     pub fn get(&self, index: PieceIndex) -> bool {
-        self.bitv[index as usize] 
+        self.bitv[index.0 as usize]
     }
 
     /// panics if index is out of bounds
     pub fn set_false(&mut self, index: PieceIndex) {
-        self.bitv.set(index as usize, false);
+        self.bitv.set(index.0 as usize, false);
         self.piece_count -= 1;
     }
 
     /// panics if index is out of bounds
     pub fn set_true(&mut self, index: PieceIndex) {
-        self.bitv.set(index as usize, true);
+        self.bitv.set(index.0 as usize, true);
         self.piece_count += 1;
     }
 
@@ -75,12 +75,12 @@ impl PieceSet {
         let randint = rand::thread_rng().gen_range(0, possible_pieces);
         println!("randint: {}", randint);
         let mut i = 0;
-        let mut picked_index = 0u32;
+        let mut picked_index = PieceIndex(0);
         // TODO: use filter() and nth() here
         for (index, (a, b)) in self.bitv.iter().zip(other.bitv.iter()).enumerate() {
             if a && b {
                 if i == randint {
-                    picked_index = index as u32;
+                    picked_index = PieceIndex(index as u32);
                     break;
                 }
                 i += 1;
@@ -88,7 +88,7 @@ impl PieceSet {
         }
 
         self.set_false(picked_index);
-        println!("Picked: {}", picked_index);
+        println!("Picked: {:?}", picked_index);
         Some(picked_index)
     }
 
