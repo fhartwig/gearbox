@@ -1,5 +1,5 @@
 [root]
-name = "rust-torrent"
+name = "gearbox"
 version = "0.0.1"
 dependencies = [
  "byteorder 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
