@@ -34,7 +34,7 @@ struct HandshakingConnection {
 impl HandshakingConnection {
     fn new(conn: NonBlock<TcpStream>, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
-        println!("In handshakingConn::new");
+        debug!("In handshakingConn::new");
 
         let mut send_buf = ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH);
         // TODO: everything we write out here is completely static (within
@@ -54,7 +54,7 @@ impl HandshakingConnection {
 
     fn open(peer: &PeerInfo, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
-        println!("In handshakingConn::open");
+        debug!("In handshakingConn::open");
         let sock = mio::tcp::v4().unwrap(); // TODO: error handling
         let (stream, _) = sock.connect(&SocketAddr::V4(peer.addr)).unwrap(); // TODO: what is the _ for?
         HandshakingConnection::new(stream, torrent, own_id)
@@ -63,7 +63,7 @@ impl HandshakingConnection {
     /// return Err(()) on error, boolean indicating whether or not we're done
         /// otherwise
     fn read(&mut self) -> Result<(), ()> {
-        println!("In handshakingConn::read");
+        debug!("In handshakingConn::read");
         let read_result = {
             let mut slice_buf = MutSliceBuf::wrap(
                 &mut self.recv_buf[self.bytes_received..
@@ -72,18 +72,18 @@ impl HandshakingConnection {
         };
         match read_result {
             Ok(Some(bytes_read)) => {
-                println!("Read {} bytes", bytes_read);
+                debug!("Read {} bytes", bytes_read);
                 self.bytes_received += bytes_read;
             },
             Ok(None) => unreachable!(),
-            Err(e) => {println!("Error reading: {:?}", e); return Err(())}
+            Err(e) => {info!("Error reading: {:?}", e); return Err(())}
         }
         Ok(())
     }
 
     /// result like read()
     fn write(&mut self) -> Result<(), ()> {
-        println!("In handshakingConn::write");
+        debug!("In handshakingConn::write");
         match self.conn.write(&mut self.send_buf) {
             Ok(None) => Ok(()), // we need to wait before sending more data
             Ok(Some(_written_bytes)) => Ok(()),
@@ -100,7 +100,7 @@ impl HandshakingConnection {
     fn finish_handshake(self, torrent: &TorrentInfo)
             -> Result<NonBlock<TcpStream>, &str> {
         try!(HandshakingConnection::verify_handshake(&self.recv_buf, torrent));
-        println!("Yay! Finished handshake!");
+        info!("Yay! Finished handshake!");
         Ok(self.conn)
     }
 
@@ -270,7 +270,7 @@ impl PeerConnection {
     }
 
     fn write_messages(&mut self, common: &CommonInfo) {
-        println!("In PeerConnection::write_messages");
+        debug!("In PeerConnection::write_messages");
         if !self.maybe_writable {return}
 
         // FIXME: this is extremely hacky, we should check if the messages
@@ -279,13 +279,12 @@ impl PeerConnection {
             self.append_queued_messages(common);
         }
         
-        println!("Sendbuf remaining: {}, capacity: {}",
+        debug!("Sendbuf remaining: {}, capacity: {}",
                 Buf::remaining(&self.send_buf), self.send_buf.capacity());
         match self.conn.write(&mut self.send_buf) {
             Ok(None) => self.maybe_writable = false,
             Ok(Some(written_bytes)) =>
-                //debug!("Wrote {} bytes of messages", written_bytes),
-                println!("Wrote {} bytes of messages", written_bytes),
+                info!("Wrote {} bytes of messages", written_bytes),
             Err(_) => panic!("Error when writing") // TODO
         }
         if Buf::has_remaining(&self.send_buf) {
@@ -311,7 +310,7 @@ impl PeerConnection {
     }
 
     fn send_queued_messages(&mut self, common: &CommonInfo) {
-        println!("In PeerConnection::send_queued_messages");
+        debug!("In PeerConnection::send_queued_messages");
         self.append_queued_messages(common);
         if Buf::has_remaining(&self.send_buf) {
             self.write_messages(common);
@@ -320,13 +319,12 @@ impl PeerConnection {
 
     /// writes all queued messages to the end of the current send buffer
     fn append_queued_messages(&mut self, common: &CommonInfo) {
-        println!("In PeerConnection::append_queued_messages");
+        debug!("In PeerConnection::append_queued_messages");
         // TODO: it is possible (in theory, but shouldn't really happen in
             // practice) that the total length of the messages execeeds the
             // capacity of the buffer. we should handle that case
         for msg in self.outgoing_msgs.drain() {
-            println!("Serialising msg: {:?}", msg);
-            println!("Buf remaining: {}", MutBuf::remaining(&self.send_buf));
+            debug!("Serialising msg: {:?}", msg);
             msg.serialise(&mut self.send_buf, common).unwrap();
         }
     }
@@ -334,17 +332,17 @@ impl PeerConnection {
     /// reads available data from socket, returns bool indicating whether
     /// a whole message is available or not
     fn read_message(&mut self) -> bool {
-        println!("In PeerConnection::read_message");
+        debug!("In PeerConnection::read_message");
         match self.conn.read(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
-                println!("Read {} bytes", bytes_read);
+                info!("Read {} bytes", bytes_read);
                 if Buf::remaining(&self.recv_buf) < 4 {
                     return false;
                 }
                 let msg_length = self.read_message_length() as usize;
                 Buf::remaining(&self.recv_buf) >= msg_length + 4
             },
-            Ok(None) => {println!("read() returned EWOULDBLOCK"); false}
+            Ok(None) => {debug!("read() returned EWOULDBLOCK"); false}
             e => panic!("Unexpected return value from socket read: {:?}", e)
         }
         // read (any) data into buf
@@ -354,12 +352,12 @@ impl PeerConnection {
     }
 
     fn read_message_length(&mut self) -> u32 {
-        println!("In PeerConnection::read_message_length");
+        debug!("In PeerConnection::read_message_length");
         self.recv_buf.bytes().read_u32::<BigEndian>().unwrap()
     }
 
     fn handle_messages(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
-        println!("In PeerConnection::handle_messages");
+        debug!("In PeerConnection::handle_messages");
         loop {
             let msg_length = {
                 let mut buf = &self.recv_buf.bytes()[..];
@@ -367,7 +365,7 @@ impl PeerConnection {
                 buf.read_u32::<BigEndian>().unwrap() as usize
             };
             let msg_offset = 4; // message not including length header
-            println!("Message length: {}", msg_length);
+            debug!("Message length: {}", msg_length);
             if msg_length + msg_offset > Buf::remaining(&self.recv_buf) {
                 break;
             }
@@ -377,7 +375,7 @@ impl PeerConnection {
             }
             let msg_payload_length = msg_length - 1;
             let msg_type_byte = self.recv_buf.bytes()[4];
-            println!("Msg type byte: {}", msg_type_byte);
+            debug!("Msg type byte: {}", msg_type_byte);
             // advance to start of message
             Buf::advance(&mut self.recv_buf, 5);
 
@@ -395,7 +393,7 @@ impl PeerConnection {
                     buffer_replaced = true;
                 },
                 8 => self.cancel_block(msg_offset, common),
-                n => println!("Unknown message type: {}", n)
+                n => info!("Unknown message type: {}", n)
             }
             if !buffer_replaced {
                 Buf::advance(&mut self.recv_buf, msg_payload_length);
@@ -406,7 +404,7 @@ impl PeerConnection {
     }
 
     fn handle_choke(&mut self) -> PeerMsgResult {
-        println!("In PeerConnection::handle_choke");
+        debug!("In PeerConnection::handle_choke");
         if self.conn_state.we_choked {
             return Ok(());
         }
@@ -415,7 +413,7 @@ impl PeerConnection {
     }
 
     fn handle_unchoke(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
-        println!("In PeerConnection::handle_unchoke");
+        debug!("In PeerConnection::handle_unchoke");
         if !self.conn_state.we_choked {
             return Ok(());
         }
@@ -429,7 +427,7 @@ impl PeerConnection {
     }
 
     fn handle_have(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
-        println!("In PeerConnection::handle_have");
+        debug!("In PeerConnection::handle_have");
         let piece_index = {
             (&self.recv_buf.bytes()[..]).read_u32::<BigEndian>().unwrap()
         };
@@ -443,7 +441,7 @@ impl PeerConnection {
     }
 
     fn start_downloading_piece(&mut self, common: &CommonInfo, piece_index: PieceIndex) {
-        println!("In PeerConnection::start_downloading_piece");
+        debug!("In PeerConnection::start_downloading_piece");
         self.currently_downloading_piece = Some(
             CurrentPieceInfo {
                 index: piece_index,
@@ -464,7 +462,7 @@ impl PeerConnection {
 
     fn handle_bitfield(&mut self, msg_length: usize, common: &mut CommonInfo)
                        -> PeerMsgResult {
-        println!("In PeerConnection::handle_bitfield");
+        debug!("In PeerConnection::handle_bitfield");
         let bitfield_byte_length =
             ((common.torrent.piece_count() + 7) / 8) as usize;
         {
@@ -491,7 +489,7 @@ impl PeerConnection {
     }
 
     fn handle_request(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
-        println!("In PeerConnection::handle_request");
+        debug!("In PeerConnection::handle_request");
         let mut reader = &self.recv_buf.bytes()[..12];
         let piece_index = reader.read_u32::<BigEndian>().unwrap();
         let offset = reader.read_u32::<BigEndian>().unwrap();
@@ -541,7 +539,7 @@ impl PeerConnection {
     // TODO: check that the block we received is the one we expected
     fn handle_incoming_block(&mut self, msg_length: usize,
                     common: &mut CommonInfo) {
-        println!("In PeerConnection::handle_incoming_block");
+        debug!("In PeerConnection::handle_incoming_block");
         let mut old_buf = self.replace_buf(msg_length as u32);
         let block_info = {
             let mut reader: &[u8] = old_buf.bytes();
@@ -580,7 +578,7 @@ impl PeerConnection {
     }
 
     fn cancel_block(&mut self, msg_offset: usize, common: &CommonInfo) {
-        println!("In PeerConnection::cancel_block");
+        debug!("In PeerConnection::cancel_block");
         // parse piece index, offset, length from message
         let mut reader = &self.recv_buf.bytes()[msg_offset..msg_offset + 12];
         // TODO: validate BlockInfo fields
@@ -602,11 +600,11 @@ impl PeerConnection {
     /// replace the buffer we're currently using, copying data past offset
     /// into the replacement buffer. Returns the old buffer
     fn replace_buf(&mut self, offset: u32) -> RingBuf {
-        println!("In PeerConnection::replace_buf");
+        debug!("In PeerConnection::replace_buf");
         // TODO: use recycled buffer if possible
         let mut new_buf = RingBuf::new(RECV_BUF_SIZE);
         {
-            println!("offset: {}, len: {}", offset, &self.recv_buf.bytes().len());
+            debug!("offset: {}, len: {}", offset, &self.recv_buf.bytes().len());
             let remaining_data = &self.recv_buf.bytes()[offset as usize..];
             new_buf.write_slice(remaining_data);
         }
@@ -660,8 +658,7 @@ impl PeerConnection {
     fn pick_piece_and_start_downloading(&mut self,
                                         new_available: Option<PieceIndex>,
                                         common: &mut CommonInfo) {
-        println!("In PeerConnection::pick_piece_and_start_downloading");
-        println!("new_available: {:?}", new_available);
+        debug!("In PeerConnection::pick_piece_and_start_downloading");
         let o_piece = match new_available {
             Some(piece_index) if common.pieces_to_download[piece_index] =>
                 Some(piece_index),
@@ -675,7 +672,7 @@ impl PeerConnection {
     }
 
     fn stop_being_interested(&mut self) {
-        println!("In PeerConnection::stop_being_interested");
+        debug!("In PeerConnection::stop_being_interested");
         self.enqueue_msg(PeerMsg::NotInterested);
         self.conn_state.we_interested = false;
     }
@@ -699,7 +696,7 @@ impl PeerConnection {
     }
 
     fn try_send_bitfield(&mut self, our_pieces: &PieceSet) {
-        println!("In PeerConnection::try_send_bitfield");
+        debug!("In PeerConnection::try_send_bitfield");
         if !our_pieces.is_empty() {
             self.enqueue_msg(PeerMsg::BitField);
         }
@@ -807,7 +804,7 @@ impl <'a>PeerEventHandler<'a> {
            block_writer_chan: Sender<BlockFromPeer>,
            peer_id: &'a[u8;20], tracker: Tracker) -> PeerEventHandler<'a> {
         let our_pieces = torrent.check_downloaded_pieces();
-        println!("downloaded_pieces: {:?}", our_pieces);
+        info!("downloaded_pieces: {:?}", our_pieces);
         PeerEventHandler {
             open_conns: Slab::new_starting_at(Token(1024), 128),
             conn_nursery: Slab::new_starting_at(Token(2), 128),
@@ -844,7 +841,7 @@ impl <'a>PeerEventHandler<'a> {
 
     fn migrate_conn_from_nursery(&mut self, token: Token,
                                 event_loop: &mut PeerEventLoop) {
-        println!("Migrating conn {:?} from nursery", token);
+        info!("Migrating conn {:?} from nursery", token);
         let conn = self.conn_nursery.remove(token).unwrap();
         let conn_id = self.next_conn_id();
         let sock = conn.finish_handshake(&self.common_info.torrent).unwrap();
@@ -857,7 +854,7 @@ impl <'a>PeerEventHandler<'a> {
     fn add_conn_to_open_conns(&mut self, conn: PeerConnection,
                               event_loop: &mut PeerEventLoop) {
         let tok = self.open_conns.insert(conn).ok().unwrap();
-        println!("Inserted into open_conns. Token: {:?}", tok);
+        debug!("Inserted into open_conns. Token: {:?}", tok);
         let peer_conn_ref = &mut self.open_conns[tok];
         peer_conn_ref.token = tok;
         event_loop.deregister(&peer_conn_ref.conn).unwrap();
@@ -915,7 +912,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
 
     fn readable(&mut self, event_loop: &mut PeerEventLoop, token: Token,
                 hint: mio::ReadHint) {
-        println!("Readable. Hint: {:?}, token: {:?}", hint, token);
+        info!("Readable. Hint: {:?}, token: {:?}", hint, token);
         match token {
             LISTENER_TOKEN => { // accept new connection, handshake etc
                 self.try_accept(event_loop);
@@ -927,7 +924,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                     return;
                 }
                 if hint.is_error() || hint.is_hup() {
-                    println!("closing connection {:?}", token);
+                    info!("closing connection {:?}", token);
                     let c = self.conn_nursery.remove(token).expect("no such token");
                     event_loop.deregister(&c.conn).ok().expect("error deregistering");
                 }
@@ -962,7 +959,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     }
 
     fn writable(&mut self, event_loop: &mut PeerEventLoop, token: Token) {
-        println!("writable. token: {:?}", token);
+        info!("writable. token: {:?}", token);
         let Token(n) = token;
         if n < 1024 { // half-open connection
             if !self.conn_nursery.contains(token) {

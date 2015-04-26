@@ -8,6 +8,7 @@ extern crate mio;
 extern crate rand;
 #[macro_use]
 extern crate log;
+extern crate env_logger;
 extern crate byteorder;
 
 #[cfg(test)]
@@ -32,6 +33,7 @@ mod types;
 mod piece_set;
 
 fn main() {
+    env_logger::init().unwrap();
     let path = PathBuf::from(&std::env::args().nth(1).unwrap());
     let mut data_vec = Vec::new();
     File::open(&path).unwrap().read_to_end(&mut data_vec).unwrap();

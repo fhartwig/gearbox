@@ -3,6 +3,7 @@ name = "gearbox"
 version = "0.0.1"
 dependencies = [
  "byteorder 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.3.14 (git+https://github.com/hyperium/hyper)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.3.4 (git+https://github.com/carllerche/mio)",
@@ -36,6 +37,15 @@ dependencies = [
  "rustc-serialize 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex 0.1.30 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -176,6 +186,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "regex"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "rust-crypto"

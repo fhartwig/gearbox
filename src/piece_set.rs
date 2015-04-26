@@ -64,12 +64,10 @@ impl PieceSet {
         let possible_pieces = 
             self.bitv.iter().zip(other.bitv.iter()).filter(|&(a, b)| a && b)
             .count();
-        println!("Possible pieces: {}", possible_pieces);
         if possible_pieces == 0 {
             return None;
         }
         let randint = rand::thread_rng().gen_range(0, possible_pieces);
-        println!("randint: {}", randint);
         let mut i = 0;
         let mut picked_index = PieceIndex(0);
         // TODO: use filter() and nth() here
@@ -84,7 +82,7 @@ impl PieceSet {
         }
 
         self.set_false(picked_index);
-        println!("Picked: {:?}", picked_index);
+        info!("Picked: {:?}", picked_index);
         Some(picked_index)
     }
 
