@@ -63,7 +63,7 @@ struct HandleCache<'a, AccessModeType> {
 impl <'a, T> HandleCache<'a, T> {
     fn new(torrent: &'a TorrentInfo) -> HandleCache<'a, T> {
         HandleCache {
-            handles: VecMap::with_capacity(torrent.files.len()),
+            handles: VecMap::with_capacity(torrent.files().len()),
             torrent: torrent,
             _marker: PhantomData
         }
@@ -73,7 +73,7 @@ impl <'a, T> HandleCache<'a, T> {
             -> &mut File {
         match self.handles.entry(file_index) {
             Entry::Vacant(v_entry) => {
-                let path = &self.torrent.files[file_index].path;
+                let path = &self.torrent.files()[file_index].path;
                 v_entry.insert(
                     OpenOptions::new().read(read).write(write)
                                 .create(true).open(path).unwrap()

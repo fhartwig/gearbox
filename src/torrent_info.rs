@@ -33,11 +33,9 @@ pub struct TorrentInfo {
     name: String,
     piece_length: u32,
     hashes: Vec<u8>,
-    // TODO: this should not be public
-    pub files: Vec<FileInfo>,
+    files: Vec<FileInfo>,
     total_size: u64,
-    // TODO: this should not be public
-    pub info_hash: Vec<u8>
+    info_hash: Vec<u8>
 }
 
 impl Debug for TorrentInfo {
@@ -83,6 +81,14 @@ impl TorrentInfo {
                 info_hash: info_hash
             }
         )
+    }
+
+    pub fn files(&self) -> &[FileInfo] {
+        &self.files
+    }
+
+    pub fn info_hash(&self) -> &[u8] {
+        &self.info_hash
     }
 
     // panics when passed an invalid piece index

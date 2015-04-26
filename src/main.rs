@@ -43,7 +43,7 @@ fn main() {
     for b in peer_id.iter_mut() {
         *b = rand::random();
     }
-    let r = tracker.make_request(&torrent_info.info_hash,
+    let r = tracker.make_request(torrent_info.info_hash(),
         &peer_id, Some(Event::Started), 0, 0, 0, LISTENING_PORT).unwrap();
     let (disk_reader_request_sender, disk_reader_request_receiver) = channel();
     let (disk_writer_sender, disk_writer_receiver) = channel();

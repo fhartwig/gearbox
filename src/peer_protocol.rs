@@ -42,7 +42,7 @@ impl HandshakingConnection {
             // and then just do send_buf.write_all(handshake_buf)
         send_buf.write_slice(
             b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
-        send_buf.write_slice(&torrent.info_hash);
+        send_buf.write_slice(torrent.info_hash());
         send_buf.write_slice(own_id);
         HandshakingConnection {
             conn: conn,
@@ -114,7 +114,7 @@ impl HandshakingConnection {
         // the next 8 bytes are extension flags
         
         let info_hash = &handshake[28..48];
-        if torrent.info_hash != info_hash {
+        if torrent.info_hash() != info_hash {
             return Err("bad info hash");
         }
         // the next 20 bytes are the peer's peer id
@@ -884,7 +884,7 @@ impl <'a>PeerEventHandler<'a> {
 
     // FIXME: should we really talk to the tracker in the main thread?
     fn make_tracker_request(&mut self, event: Option<tracker::Event>) {
-        self.tracker.make_request(&self.common_info.torrent.info_hash,
+        self.tracker.make_request(&self.common_info.torrent.info_hash(),
                                   self.own_peer_id, event,
                                   0, 0, 0, LISTENING_PORT).unwrap();
     }
