@@ -1,6 +1,7 @@
 use rand;
 use rand::Rng;
 use std::collections::BitVec;
+use std::ops::Index;
 
 use torrent_info::TorrentInfo;
 use types::PieceIndex;
@@ -35,11 +36,6 @@ impl PieceSet {
 
     pub fn count(&self) -> u32 {
         self.piece_count
-    }
-
-    /// panics if index is out of bounds
-    pub fn get(&self, index: PieceIndex) -> bool {
-        self.bitv[index.0 as usize]
     }
 
     /// panics if index is out of bounds
@@ -94,5 +90,13 @@ impl PieceSet {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         self.bitv.to_bytes()
+    }
+}
+
+impl Index<PieceIndex> for PieceSet {
+    type Output = bool;
+
+    fn index<'a>(&'a self, index: PieceIndex) -> &bool {
+        &self.bitv[index.0 as usize]
     }
 }

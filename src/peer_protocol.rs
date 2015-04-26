@@ -488,7 +488,7 @@ impl PeerConnection {
         if piece_index > common.torrent.piece_count() {
             return Err(MsgError::PieceIndexTooLarge);
         }
-        if !common.our_pieces.get(PieceIndex(piece_index)) {
+        if !common.our_pieces[PieceIndex(piece_index)] {
             return Err(MsgError::PieceNotAvailable);
         }
         let expected_length =
@@ -637,7 +637,7 @@ impl PeerConnection {
     fn pick_piece(&mut self, new_available: Option<PieceIndex>,
                     common: &mut CommonInfo) -> Option<PieceIndex> {
         match new_available {
-            Some(piece_index) if common.pieces_to_download.get(piece_index) =>
+            Some(piece_index) if common.pieces_to_download[piece_index] =>
                 Some(piece_index),
             Some(_) => None,
             None =>
@@ -651,7 +651,7 @@ impl PeerConnection {
         println!("In PeerConnection::pick_piece_and_start_downloading");
         println!("new_available: {:?}", new_available);
         let o_piece = match new_available {
-            Some(piece_index) if common.pieces_to_download.get(piece_index) =>
+            Some(piece_index) if common.pieces_to_download[piece_index] =>
                 Some(piece_index),
             Some(_) => None,
             None =>
