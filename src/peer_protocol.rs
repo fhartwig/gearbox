@@ -163,7 +163,8 @@ pub struct PeerConnection {
     conn_id: ConnectionId,
     // number of blocks requested by the peer that we still have to deliver
     blocks_requested_by_peer: u8,
-    token: Token
+    token: Token,
+    maybe_writable: bool
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -254,8 +255,9 @@ impl PeerConnection {
             currently_downloading_piece: None,
             conn_id: id,
             blocks_requested_by_peer: 0,
-            token: Token(0) // FIXME: i don't like that the creator of the
+            token: Token(0), // FIXME: i don't like that the creator of the
                                 // connection has to remember to set this
+            maybe_writable: true
         }
     }
 
@@ -269,20 +271,24 @@ impl PeerConnection {
 
     fn write_messages(&mut self, common: &CommonInfo) {
         println!("In PeerConnection::write_messages");
-        // TODO:
-            // check if there is room at the end of the buffer
-            // if there is, append waiting messages to the end of it
+        if !self.maybe_writable {return}
+
+        // FIXME: this is extremely hacky, we should check if the messages
+            // we have actually fit in the buffer
+        if MutBuf::remaining(&self.send_buf) > 512 {
+            self.append_queued_messages(common);
+        }
         
         println!("Sendbuf remaining: {}, capacity: {}",
                 Buf::remaining(&self.send_buf), self.send_buf.capacity());
         match self.conn.write(&mut self.send_buf) {
-            Ok(None) => (),
+            Ok(None) => self.maybe_writable = false,
             Ok(Some(written_bytes)) =>
                 //debug!("Wrote {} bytes of messages", written_bytes),
                 println!("Wrote {} bytes of messages", written_bytes),
             Err(_) => panic!("Error when writing") // TODO
         }
-        if MutBuf::remaining(&self.send_buf) > 0 {
+        if Buf::has_remaining(&self.send_buf) {
             // TODO: continue writing data
         } else {
             if self.outgoing_msgs.is_empty() {
@@ -306,6 +312,15 @@ impl PeerConnection {
 
     fn send_queued_messages(&mut self, common: &CommonInfo) {
         println!("In PeerConnection::send_queued_messages");
+        self.append_queued_messages(common);
+        if Buf::has_remaining(&self.send_buf) {
+            self.write_messages(common);
+        }
+    }
+
+    /// writes all queued messages to the end of the current send buffer
+    fn append_queued_messages(&mut self, common: &CommonInfo) {
+        println!("In PeerConnection::append_queued_messages");
         // TODO: it is possible (in theory, but shouldn't really happen in
             // practice) that the total length of the messages execeeds the
             // capacity of the buffer. we should handle that case
@@ -313,9 +328,6 @@ impl PeerConnection {
             println!("Serialising msg: {:?}", msg);
             println!("Buf remaining: {}", MutBuf::remaining(&self.send_buf));
             msg.serialise(&mut self.send_buf, common).unwrap();
-        }
-        if Buf::has_remaining(&self.send_buf) {
-            self.write_messages(common);
         }
     }
 
@@ -851,14 +863,11 @@ impl <'a>PeerEventHandler<'a> {
         event_loop.deregister(&peer_conn_ref.conn).unwrap();
         event_loop.register_opt(&peer_conn_ref.conn, tok,
                 Interest::readable() | Interest::writable(),
-                //PollOpt::level() // XXX
-                PollOpt::edge() // XXX
+                PollOpt::edge() // TODO: do we want one-shot?
         ).unwrap();
-        // TODO: the following is to make sure we get notified when we can read
-            // or write, but it should be done properly (read/write until
-            // Ewouldblock)
         peer_conn_ref.read(&mut self.common_info);
-        peer_conn_ref.write_messages(&self.common_info);
+        // FIXME: read shouldn't really be called from here, since we
+            // don't handle e.g. the action queue here
     }
 
     fn next_conn_id(&mut self) -> ConnectionId {
@@ -974,7 +983,9 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                 // 1: readable notification with hup-hint
                 // 2: writable notification for the same token
             if let Some(conn) = self.open_conns.get_mut(token) {
-                if Buf::has_remaining(&conn.send_buf) {
+                conn.maybe_writable = true;
+                if Buf::has_remaining(&conn.send_buf) ||
+                        !conn.outgoing_msgs.is_empty() {
                     conn.write_messages(&self.common_info)
                 }
             }

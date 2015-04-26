@@ -91,7 +91,7 @@ impl TorrentInfo {
         &self.info_hash
     }
 
-    // panics when passed an invalid piece index
+    /// panics when passed an invalid piece index
     pub fn get_piece_length(&self, piece_index: PieceIndex) -> u32 {
         if piece_index.0 as u32 > self.piece_count() {
             panic!("get_piece_length: Bad piece index");
@@ -138,6 +138,7 @@ impl TorrentInfo {
                                         self.get_piece_length(piece_index)) {
                 let buf_section = &mut buf[offset_in_piece as usize..
                                             // FIXME: add offset to end index
+                                            // TODO: this seems to work, but why?
                                            file_section.length as usize];
                 if cur_file_index < file_section.file_index {
                     cur_file_index += 1;
