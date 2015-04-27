@@ -2,12 +2,12 @@
 name = "gearbox"
 version = "0.0.1"
 dependencies = [
- "byteorder 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "byteorder 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.3.14 (git+https://github.com/hyperium/hyper)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.3.4 (git+https://github.com/carllerche/mio)",
- "nix 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (git+https://github.com/DaGenix/rust-crypto)",
  "url 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -20,7 +20,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "byteorder"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -67,7 +67,7 @@ dependencies = [
  "httparse 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mime 0.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "num_cpus 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num_cpus 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "openssl 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -119,17 +119,17 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.3.4"
-source = "git+https://github.com/carllerche/mio#35e66d01db5418cd478cf660ed96353535a10b4e"
+source = "git+https://github.com/carllerche/mio#f8dc21fa644526ae234db3b224c7a9570bd724d2"
 dependencies = [
  "bytes 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "nix"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -138,7 +138,7 @@ dependencies = [
 
 [[package]]
 name = "num_cpus"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
