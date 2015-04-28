@@ -31,8 +31,8 @@ impl Tracker {
     }
 
     pub fn make_request(&self, info_hash: &[u8], peer_id: &[u8],
-            event: Option<Event>, uploaded: usize, downloaded: usize,
-            left: usize, port: u16) -> Result<Vec<PeerInfo>, ()> {
+            event: Option<Event>, uploaded: u64, downloaded: u64,
+            left: u64, port: u16) -> Result<Vec<PeerInfo>, ()> {
         match &self.url.scheme[..] {
             "http" => {
                 let mut url = self.url.clone();

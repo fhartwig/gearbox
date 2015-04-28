@@ -19,8 +19,8 @@ use std::path::PathBuf;
 use std::io::Read;
 use std::sync::mpsc::channel;
 
-use peer_protocol::{run_event_loop, LISTENING_PORT};
-use tracker::{Tracker, Event};
+use peer_protocol::{run_event_loop};
+use tracker::{Tracker};
 use torrent_info::TorrentInfo;
 
 mod bencode;
@@ -45,8 +45,6 @@ fn main() {
     for b in peer_id.iter_mut() {
         *b = rand::random();
     }
-    let r = tracker.make_request(torrent_info.info_hash(),
-        &peer_id, Some(Event::Started), 0, 0, 0, LISTENING_PORT).unwrap();
     let (disk_reader_request_sender, disk_reader_request_receiver) = channel();
     let (disk_writer_sender, disk_writer_receiver) = channel();
     let writer_guard = ::std::thread::scoped(
@@ -62,14 +60,8 @@ fn main() {
                                    block_from_disk_sender)
     );
 
-    println!("r: {:?}", r);
-    run_event_loop(event_loop,
-                   &torrent_info,
-                   disk_writer_sender,
-                   disk_reader_request_sender,
-                   &peer_id,
-                   tracker,
-                   &r);
+    run_event_loop(event_loop, &torrent_info, disk_writer_sender,
+                   disk_reader_request_sender, &peer_id, tracker);
     reader_guard.join();
     writer_guard.join();
 }

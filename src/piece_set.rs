@@ -68,18 +68,9 @@ impl PieceSet {
             return None;
         }
         let randint = rand::thread_rng().gen_range(0, possible_pieces);
-        let mut i = 0;
-        let mut picked_index = PieceIndex(0);
-        // TODO: use filter() and nth() here
-        for (index, (a, b)) in self.bitv.iter().zip(other.bitv.iter()).enumerate() {
-            if a && b {
-                if i == randint {
-                    picked_index = PieceIndex(index as u32);
-                    break;
-                }
-                i += 1;
-            }
-        }
+        let n = self.bitv.iter().zip(&other.bitv).enumerate()
+                    .filter(|&(_, t)| t.0 == t.1).nth(randint).unwrap().0;
+        let picked_index = PieceIndex(n as u32);
 
         self.set_false(picked_index);
         info!("Picked: {:?}", picked_index);

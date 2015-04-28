@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
 use tracker;
-use tracker::Tracker;
+use tracker::{Tracker, Event};
 use peer::PeerInfo;
 use types::{BlockInfo, BlockFromPeer, BlockFromDisk, BlockRequest, PieceIndex,
     PieceReaderMessage, ConnectionId, BlockReceiver};
@@ -35,7 +35,6 @@ impl HandshakingConnection {
     fn new(conn: NonBlock<TcpStream>, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
         debug!("In handshakingConn::new");
-
         let mut send_buf = ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH);
         // TODO: everything we write out here is completely static (within
             // the same torrent). Maybe we should create this buffer once
@@ -164,7 +163,9 @@ pub struct PeerConnection {
     // number of blocks requested by the peer that we still have to deliver
     blocks_requested_by_peer: u8,
     token: Token,
-    maybe_writable: bool
+    maybe_writable: bool,
+    outgoing_buf_bytes_sent: u32,
+    outgoing_block_length: Option<u16>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,7 +176,7 @@ struct CurrentPieceInfo {
 }
 
 impl CurrentPieceInfo {
-    /// construct the next block request. Panics if whole block has been
+    /// construct the next block request. Returns None if whole block has been
     /// requested already
     fn next_block(&mut self) -> Option<BlockInfo> {
         if self.requested_up_to >= self.length {
@@ -207,7 +208,9 @@ struct CommonInfo<'a> {
     /// blocks that have been requested from disk thread but not delivered yet
     pending_disk_blocks: VecDeque<(ConnectionId, BlockInfo)>,
     /// message from connection to event handler
-    handler_action: Option<HandlerAction>
+    handler_action: Option<HandlerAction>,
+    bytes_downloaded: u64,
+    bytes_uploaded: u64
 }
 
 impl <'a> CommonInfo<'a> {
@@ -223,7 +226,9 @@ impl <'a> CommonInfo<'a> {
             piece_writer_chan: writer_chan,
             torrent: torrent,
             pending_disk_blocks: VecDeque::with_capacity(16),
-            handler_action: None
+            handler_action: None,
+            bytes_downloaded: 0,
+            bytes_uploaded: 0,
         }
     }
 }
@@ -234,7 +239,6 @@ const BLOCK_SIZE: u32 = 1 << 14;
 const RECV_BUF_SIZE: usize = 1 << 15;
 const SEND_BUF_SIZE: usize = 1 << 15;
 
-//const CONNECTION_LIMIT: usize = 30; //XXX
 const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 
 const CONCURRENT_REQUESTS_PER_PEER: u8 = 8;
@@ -257,7 +261,9 @@ impl PeerConnection {
             blocks_requested_by_peer: 0,
             token: Token(0), // FIXME: i don't like that the creator of the
                                 // connection has to remember to set this
-            maybe_writable: true
+            maybe_writable: true,
+            outgoing_buf_bytes_sent: 0,
+            outgoing_block_length: None
         }
     }
 
@@ -269,8 +275,8 @@ impl PeerConnection {
         }
     }
 
-    fn write_messages(&mut self, common: &CommonInfo) {
-        debug!("In PeerConnection::write_messages");
+    fn write(&mut self, common: &mut CommonInfo) {
+        debug!("In PeerConnection::write");
         if !self.maybe_writable {return}
 
         // FIXME: this is extremely hacky, we should check if the messages
@@ -283,37 +289,46 @@ impl PeerConnection {
                 Buf::remaining(&self.send_buf), self.send_buf.capacity());
         match self.conn.write(&mut self.send_buf) {
             Ok(None) => self.maybe_writable = false,
-            Ok(Some(written_bytes)) =>
-                info!("Wrote {} bytes of messages", written_bytes),
-            Err(_) => panic!("Error when writing") // TODO
-        }
-        if Buf::has_remaining(&self.send_buf) {
-            // TODO: continue writing data
-        } else {
-            if self.outgoing_msgs.is_empty() {
-                match self.outgoing_blocks.pop_back() {
-                    Some(block_buf) => {
-                        // TODO: recycle current buffer
-                        self.send_buf = block_buf;
-                        // TODO: continue writing to socket
-                    },
-                    None => {
-                        //self.send_buf.clear();
-                        // TODO: unregister interest in writing to socket
-                            // (nothing left to write)
+            Ok(Some(written_bytes)) => {
+                info!("Wrote {} bytes of messages", written_bytes);
+                self.outgoing_buf_bytes_sent += written_bytes as u32;
+                if let Some(block_length) = self.outgoing_block_length {
+                    if written_bytes > block_length as usize {
+                        self.outgoing_block_length = None;
+                        // -13 to account for msg header
+                        common.bytes_uploaded += (block_length - 13) as u64;
                     }
                 }
-            } else {
-                self.send_queued_messages(common);
+            },
+            Err(_) => panic!("Error when writing") // TODO
+        }
+        if !Buf::has_remaining(&self.send_buf)
+                && self.outgoing_msgs.is_empty() {
+            self.try_replace_send_buf();
+        }
+    }
+
+    fn try_replace_send_buf(&mut self) {
+        match self.outgoing_blocks.pop_back() {
+            Some(block_buf) => {
+                self.outgoing_buf_bytes_sent = 0;
+                self.outgoing_block_length =
+                    Some(Buf::remaining(&block_buf) as u16);
+                // TODO: recycle current buffer
+                self.send_buf = block_buf;
+            },
+            None => { // we have nothing left to send
+                // TODO: we should reset the buffer (because otherwise
+                    // we will eventually wrap)
             }
         }
     }
 
-    fn send_queued_messages(&mut self, common: &CommonInfo) {
+    fn send_queued_messages(&mut self, common: &mut CommonInfo) {
         debug!("In PeerConnection::send_queued_messages");
         self.append_queued_messages(common);
         if Buf::has_remaining(&self.send_buf) {
-            self.write_messages(common);
+            self.write(common);
         }
     }
 
@@ -563,11 +578,14 @@ impl PeerConnection {
         match o_next_block {
             None => {
                 // we finished downloading this piece
-                let current_index =
-                    self.currently_downloading_piece.unwrap().index;
-                common.our_pieces.set_true(current_index);
-                common.handler_action =
-                    Some(HandlerAction::FinishedPiece(current_index));
+                {
+                    let cur_piece_ref =
+                        self.currently_downloading_piece.as_ref().unwrap();
+                    common.bytes_downloaded += cur_piece_ref.length as u64;
+                    common.our_pieces.set_true(cur_piece_ref.index);
+                    common.handler_action =
+                        Some(HandlerAction::FinishedPiece(cur_piece_ref.index));
+                }
                 self.pick_piece_and_start_downloading(None, common);
                 if self.currently_downloading_piece.is_none() {
                     self.stop_being_interested();
@@ -890,9 +908,14 @@ impl <'a>PeerEventHandler<'a> {
 
     // FIXME: should we really talk to the tracker in the main thread?
     fn make_tracker_request(&mut self, event: Option<tracker::Event>) {
+        let common = &self.common_info;
+        let bytes_remaining =
+            common.torrent.bytes_left_to_download(&common.our_pieces);
         self.tracker.make_request(&self.common_info.torrent.info_hash(),
                                   self.own_peer_id, event,
-                                  0, 0, 0, LISTENING_PORT).unwrap();
+                                  common.bytes_uploaded,
+                                  common.bytes_downloaded,
+                                  bytes_remaining, LISTENING_PORT).unwrap();
     }
 
     fn close_connection(&mut self, token: Token) {
@@ -983,7 +1006,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                 conn.maybe_writable = true;
                 if Buf::has_remaining(&conn.send_buf) ||
                         !conn.outgoing_msgs.is_empty() {
-                    conn.write_messages(&self.common_info)
+                    conn.write(&mut self.common_info)
                 }
             }
         }
@@ -1038,8 +1061,7 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                       block_writer_chan: Sender<BlockFromPeer>,
                       piece_reader_chan: Sender<PieceReaderMessage>,
                       peer_id: &'a [u8;20],
-                      tracker: Tracker,
-                      peers: &[PeerInfo]) {
+                      tracker: Tracker) {
     let listening_addr = SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0), LISTENING_PORT));
     let sock = mio::tcp::v4().unwrap_or_else(|_| panic!("Error creating socket"));
@@ -1050,10 +1072,17 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                                             piece_reader_chan,
                                             block_writer_chan, peer_id,
                                             tracker);
+    let bytes_left_to_download =
+        torrent.bytes_left_to_download(&handler.common_info.our_pieces);
+    let peers = handler.tracker.make_request(torrent.info_hash(), peer_id,
+                                             Some(Event::Started), 0, 0,
+                                             bytes_left_to_download,
+                                             LISTENING_PORT)
+                               .unwrap();
     event_loop.register_opt(&handler.listening_sock, LISTENER_TOKEN,
                             Interest::readable(), PollOpt::edge()).unwrap();
-    initiate_peer_connections(&mut event_loop, peers, torrent, peer_id,
-                                &mut handler.conn_nursery);
+    initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
+                              &mut handler.conn_nursery);
     event_loop.run(&mut handler).ok().expect("Error in event_loop.run");
 }
 

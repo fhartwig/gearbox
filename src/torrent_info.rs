@@ -67,7 +67,7 @@ impl TorrentInfo {
         }
         let mut hasher = Sha1::new();
         hasher.input(dict_str);
-        let mut info_hash: Vec<u8> = repeat(0).take(20).collect();
+        let mut info_hash = vec![0;20];
         hasher.result(&mut info_hash[..]);
         // TODO: check that total_size, piece_length and piece_count make sense
             // together
@@ -177,6 +177,20 @@ impl TorrentInfo {
             }
         }
         piece_set
+    }
+
+    pub fn bytes_left_to_download(&self, pieces: &PieceSet) -> u64 {
+        println!("total size: {}", self.total_size);
+        println!("piece count: {}", pieces.count());
+        println!("piece length: {}", self.piece_length);
+        let mut downloaded_bytes =
+            (pieces.count() as u64) * (self.piece_length as u64);
+        let last_piece_index = PieceIndex(self.piece_count() - 1);
+        if pieces[last_piece_index] {
+            downloaded_bytes -= (self.piece_length -
+                                 self.get_piece_length(last_piece_index)) as u64
+        }
+        self.total_size - downloaded_bytes
     }
 }
 
@@ -302,5 +316,33 @@ impl <'a> FromBValue<'a> for TorrentInfo {
             },
             _ => Err(WrongBValueConstructor)
         }
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use piece_set::PieceSet;
+    use types::PieceIndex;
+
+    #[test]
+    fn test_bytes_left_to_download() {
+        let file_info = FileInfo{path: PathBuf::from("foo"), length: 10};
+        let torrent = TorrentInfo::new("".to_string(), 3, vec![0;4 * 20],
+                                       vec![file_info], b"").unwrap();
+        let mut pieces = PieceSet::new_empty(&torrent);
+        assert_eq!(torrent.bytes_left_to_download(&pieces), 10);
+
+        pieces.set_true(PieceIndex(0));
+        assert_eq!(torrent.bytes_left_to_download(&pieces), 7);
+
+        pieces.set_true(PieceIndex(3));
+        assert_eq!(torrent.bytes_left_to_download(&pieces), 6);
+
+        pieces.set_true(PieceIndex(1));
+        assert_eq!(torrent.bytes_left_to_download(&pieces), 3);
     }
 }
