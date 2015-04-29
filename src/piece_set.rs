@@ -60,21 +60,27 @@ impl PieceSet {
 
     /// picks a random index that is set in both input PieceSets, removing
     /// the piece index from self
+    // FIXME: write tests for this
     pub fn pick_piece_from(&mut self, other: &Self) -> Option<PieceIndex> {
-        let possible_pieces = 
-            self.bitv.iter().zip(other.bitv.iter()).filter(|&(a, b)| a && b)
-            .count();
-        if possible_pieces == 0 {
+        let new_pieces = self.bitv.iter().zip(other.bitv.iter())
+                             .filter(|&(a, b)| a && b).count();
+        if new_pieces == 0 {
             return None;
         }
-        let randint = rand::thread_rng().gen_range(0, possible_pieces);
+        let randint = rand::thread_rng().gen_range(0, new_pieces);
         let n = self.bitv.iter().zip(&other.bitv).enumerate()
-                    .filter(|&(_, t)| t.0 == t.1).nth(randint).unwrap().0;
+                    // TODO: why did this work with == instead of &&?
+                    //.filter(|&(_, t)| t.0 == t.1).nth(randint).unwrap().0;
+                    .filter(|&(_, t)| t.0 && t.1).nth(randint).unwrap().0;
         let picked_index = PieceIndex(n as u32);
 
         self.set_false(picked_index);
         info!("Picked: {:?}", picked_index);
         Some(picked_index)
+    }
+
+    pub fn has_new_pieces(&self, other: &Self) -> bool {
+        self.bitv.iter().zip(other.bitv.iter()).any(|(a, b)| a && b)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

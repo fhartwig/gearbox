@@ -282,7 +282,7 @@ impl PeerConnection {
         // FIXME: this is extremely hacky, we should check if the messages
             // we have actually fit in the buffer
         if MutBuf::remaining(&self.send_buf) > 512 {
-            self.append_queued_messages(common);
+            self.append_queued_messages();
         }
         
         debug!("Sendbuf remaining: {}, capacity: {}",
@@ -326,21 +326,21 @@ impl PeerConnection {
 
     fn send_queued_messages(&mut self, common: &mut CommonInfo) {
         debug!("In PeerConnection::send_queued_messages");
-        self.append_queued_messages(common);
+        self.append_queued_messages();
         if Buf::has_remaining(&self.send_buf) {
             self.write(common);
         }
     }
 
     /// writes all queued messages to the end of the current send buffer
-    fn append_queued_messages(&mut self, common: &CommonInfo) {
+    fn append_queued_messages(&mut self) {
         debug!("In PeerConnection::append_queued_messages");
         // TODO: it is possible (in theory, but shouldn't really happen in
             // practice) that the total length of the messages execeeds the
             // capacity of the buffer. we should handle that case
         for msg in self.outgoing_msgs.drain() {
             debug!("Serialising msg: {:?}", msg);
-            msg.serialise(&mut self.send_buf, common).unwrap();
+            msg.serialise(&mut self.send_buf).unwrap();
         }
     }
 
@@ -647,10 +647,20 @@ impl PeerConnection {
         // TODO: if the peer has requested pieces, start sending them
     }*/
 
+    // TODO: it's probably worth breaking this into two functions, one that
+        // we call when we get a bitfield and one that we call when we get
+        // `Have`
     fn new_piece_available(&mut self, new_available: Option<PieceIndex>,
             common: &mut CommonInfo) {
-        if self.currently_downloading_piece.is_none() &&
-                !self.conn_state.we_choked {
+        if self.conn_state.we_choked {
+            if !self.conn_state.we_interested {
+                let become_interested = match new_available {
+                    Some(index) => common.pieces_to_download[index],
+                    None => common.pieces_to_download.has_new_pieces(&self.peers_pieces)
+                };
+                if become_interested {self.become_interested()}
+            }
+        } else if self.currently_downloading_piece.is_none() {
             if let Some(piece_index) = self.pick_piece(new_available, common) {
                 if !self.conn_state.we_interested {
                     self.become_interested();
@@ -716,7 +726,15 @@ impl PeerConnection {
     fn try_send_bitfield(&mut self, our_pieces: &PieceSet) {
         debug!("In PeerConnection::try_send_bitfield");
         if !our_pieces.is_empty() {
-            self.enqueue_msg(PeerMsg::BitField);
+            let writer = &mut self.send_buf;
+            // FIXME: argh, why can't we get an iterator over u8 out of
+                // BitVec?
+            let bytes = our_pieces.to_bytes();
+            writer.write_u32::<BigEndian>(1 + bytes.len() as u32).unwrap();
+            writer.write_u8(5).unwrap();
+            for byte in bytes.iter() {
+                writer.write_u8(*byte).unwrap();
+            }
         }
     }
 }
@@ -728,7 +746,6 @@ enum PeerMsg {
     Interested,
     NotInterested,
     Have(PieceIndex),
-    BitField,
     Request(BlockInfo),
     // Piece(UploadBlock), // vec?
     // Cancel(BlockInfo)
@@ -745,8 +762,7 @@ enum MsgError {
 type PeerMsgResult = Result<(), MsgError>;
 
 impl PeerMsg {
-    fn serialise<W: io::Write>(&self, writer: &mut W, common: &CommonInfo)
-                 -> io::Result<()>{
+    fn serialise<W: io::Write>(&self, writer: &mut W) -> io::Result<()>{
         use self::PeerMsg::*;
         match *self {
             Choke => {
@@ -769,14 +785,6 @@ impl PeerMsg {
                 try!(writer.write_u32::<BigEndian>(1 + 4));
                 try!(writer.write_u8(4));
                 try!(writer.write_u32::<BigEndian>(index.0));
-            },
-            BitField => {
-                let bytes = common.our_pieces.to_bytes();
-                try!(writer.write_u32::<BigEndian>(1 + bytes.len() as u32));
-                try!(writer.write_u8(5));
-                for byte in bytes.iter() {
-                    try!(writer.write_u8(*byte));
-                }
             },
             Request(block_info) => {
                 try!(writer.write_u32::<BigEndian>(1 + 4 + 4 + 4));
@@ -1098,11 +1106,10 @@ mod tests {
 
     use piece_set::PieceSet;
     use torrent_info::{TorrentInfo, FileInfo};
-    use types::{BlockFromPeer, PieceReaderMessage};
+    use types::*;
     use mio::{IntoNonBlock, NonBlock, Token};
     use mio;
 
-/*
     // TODO: proper error handling, although it's not that important for tests
     fn get_socket_pair() -> (TcpStream, TcpStream) {
         use nix::sys::socket::{SockType, AddressFamily, SockFlag, socketpair};
@@ -1149,7 +1156,7 @@ mod tests {
         // TODO: sensible variable names
         let (our_conn, peer_conn) = get_socket_pair();
         let nb_our_conn = IntoNonBlock::into_non_block(our_conn).unwrap();
-        let p_conn = PeerConnection::new(nb_our_conn, torrent, 1);
+        let p_conn = PeerConnection::new(nb_our_conn, torrent, ConnectionId(1));
         (p_conn, peer_conn)
     }
 
@@ -1190,7 +1197,7 @@ mod tests {
         let mut peer_handshake = Vec::new();
         peer_handshake.push_all(
             b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
-        peer_handshake.push_all(&torrent.info_hash);
+        peer_handshake.push_all(torrent.info_hash());
         peer_handshake.push_all(&peer_id);
         peer_conn.write_all(&peer_handshake);
 
@@ -1203,7 +1210,7 @@ mod tests {
         println!("Read {} bytes", bytes);
         assert_eq!(&buf[..28],
                    b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
-        assert_eq!(&buf[28..48], &torrent.info_hash[..]);
+        assert_eq!(&buf[28..48], torrent.info_hash());
         assert_eq!(&buf[48..], &our_id);
     }
 
@@ -1217,9 +1224,9 @@ mod tests {
 
         let mut peers_piece_set = PieceSet::new_empty(&torrent);
         let (mut common, _, _) = mk_common_info(&torrent);
-        peers_piece_set.set_true(3);
-        peers_piece_set.set_true(23);
-        peers_piece_set.set_true(42);
+        peers_piece_set.set_true(PieceIndex(3));
+        peers_piece_set.set_true(PieceIndex(23));
+        peers_piece_set.set_true(PieceIndex(42));
 
         let bit_vec = peers_piece_set.to_bytes();
         let mut n_buf = [0u8;4];
@@ -1235,15 +1242,19 @@ mod tests {
         }
         other_end.write_all(&msg);
         peer_conn.read(&mut common);
-        assert!(!peer_conn.peers_pieces.get(2));
-        assert!(!peer_conn.peers_pieces.get(4));
-        assert!(peer_conn.peers_pieces.get(3));
-        assert!(peer_conn.peers_pieces.get(23));
-        assert!(peer_conn.peers_pieces.get(42));
+        assert!(!peer_conn.peers_pieces[PieceIndex(2)]);
+        assert!(!peer_conn.peers_pieces[PieceIndex(4)]);
+        assert!(peer_conn.peers_pieces[PieceIndex(3)]);
+        assert!(peer_conn.peers_pieces[PieceIndex(23)]);
+        assert!(peer_conn.peers_pieces[PieceIndex(42)]);
 
+        // we should be interested...
         assert!(peer_conn.conn_state.we_interested);
-        assert_eq!(peer_conn.outgoing_msgs.pop_front().unwrap(),
-                   PeerMsg::Interested);
+        // .. and should tell that (and nothing else) to the peer
+        let mut buf = [0;32];
+        let bytes_read = other_end.read(&mut buf).unwrap();
+        assert_eq!(bytes_read, 5);
+        assert_eq!(&buf[..5], [0, 0, 0, 1, 2]);
         // we shouldn't send requests, since we're choked
         assert!(peer_conn.outgoing_msgs.is_empty());
         // we also shouldn't have a currently downloading piece (same reason)
@@ -1259,7 +1270,7 @@ mod tests {
         {
             let msg = PeerMsg::Interested;
             msg.serialise(&mut buf);
-            let msg = PeerMsg::Have(0);
+            let msg = PeerMsg::Have(PieceIndex(0));
             msg.serialise(&mut buf);
         }
         let written = Buf::bytes(&buf);
@@ -1274,23 +1285,21 @@ mod tests {
         let torrent = dummy_torrent();
         let (mut peer_conn, mut other_end) = mk_peer_conn(&torrent);
         let (mut common, _, _) = mk_common_info(&torrent);
-        let mut piece_set = PieceSet::new_empty(&torrent);
-        piece_set.set_true(23);
         let mut outgoing_buf = Vec::new();
-        PeerMsg::BitField(piece_set).serialise(&mut outgoing_buf);
+        PeerMsg::Have(PieceIndex(23)).serialise(&mut outgoing_buf);
         other_end.write_all(&outgoing_buf);
         peer_conn.read(&mut common);
-        assert!(peer_conn.peers_pieces.get(23));
-        peer_conn.peers_pieces.set_false(23);
+        assert!(peer_conn.peers_pieces[PieceIndex(23)]);
+        peer_conn.peers_pieces.set_false(PieceIndex(23));
 
         outgoing_buf.clear();
         PeerMsg::Interested.serialise(&mut outgoing_buf);
-        PeerMsg::Have(42).serialise(&mut outgoing_buf);
+        PeerMsg::Have(PieceIndex(42)).serialise(&mut outgoing_buf);
         other_end.write(&outgoing_buf);
         peer_conn.read(&mut common);
         // make sure the first message hasn't been handled twice
-        assert!(!peer_conn.peers_pieces.get(23));
-        assert!(peer_conn.peers_pieces.get(42));
+        assert!(!peer_conn.peers_pieces[PieceIndex(23)]);
+        assert!(peer_conn.peers_pieces[PieceIndex(42)]);
         assert!(peer_conn.conn_state.peer_interested);
     }
 
@@ -1304,7 +1313,7 @@ mod tests {
         let (mut peer_conn, mut other_end) = mk_peer_conn(&torrent);
         let mut outgoing_buf = Vec::new();
         PeerMsg::Unchoke.serialise(&mut outgoing_buf);
-        PeerMsg::Have(42).serialise(&mut outgoing_buf);
+        PeerMsg::Have(PieceIndex(42)).serialise(&mut outgoing_buf);
 
         let mut event_loop: PeerEventLoop = mio::EventLoop::new().unwrap();
         handler.add_conn_to_open_conns(peer_conn, &mut event_loop);
@@ -1314,17 +1323,17 @@ mod tests {
         event_loop.run_once(&mut handler).unwrap();
         {
             let peer_conn_ref = &handler.open_conns[Token(1024)];
-            assert!(peer_conn_ref.peers_pieces.get(42));
+            assert!(peer_conn_ref.peers_pieces[PieceIndex(42)]);
             assert!(!peer_conn_ref.conn_state.we_choked);
         }
 
         outgoing_buf.clear();
-        PeerMsg::Have(23).serialise(&mut outgoing_buf);
+        PeerMsg::Have(PieceIndex(23)).serialise(&mut outgoing_buf);
         other_end.write(&outgoing_buf);
         event_loop.run_once(&mut handler).unwrap();
         {
             let peer_conn_ref = &handler.open_conns[Token(1024)];
-            assert!(peer_conn_ref.peers_pieces.get(23));
+            assert!(peer_conn_ref.peers_pieces[PieceIndex(23)]);
         }
         let mut incoming_buf = [0;256];
         let read_bytes = other_end.read(&mut incoming_buf).unwrap();
@@ -1332,5 +1341,4 @@ mod tests {
         assert_eq!(read_bytes, 0);
         //assert_eq!(incoming_buf, //Interested, Req(42, 0, 0));
     }
-*/
 }
