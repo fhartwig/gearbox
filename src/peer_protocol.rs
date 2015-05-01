@@ -573,6 +573,7 @@ impl PeerConnection {
         // send buffer with block info to writer thread
         let block_for_writer = BlockFromPeer::new(block_info, old_buf);
         common.piece_writer_chan.send(block_for_writer).unwrap();
+        common.bytes_downloaded += block_info.length as u64;
         let o_next_block =
             self.currently_downloading_piece.as_mut().unwrap().next_block();
         match o_next_block {
@@ -581,7 +582,6 @@ impl PeerConnection {
                 {
                     let cur_piece_ref =
                         self.currently_downloading_piece.as_ref().unwrap();
-                    common.bytes_downloaded += cur_piece_ref.length as u64;
                     common.our_pieces.set_true(cur_piece_ref.index);
                     common.handler_action =
                         Some(HandlerAction::FinishedPiece(cur_piece_ref.index));
@@ -1039,6 +1039,13 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
             self.common_info.pending_disk_blocks.pop_front();
         }
     }
+
+    fn timeout(&mut self, event_loop: &mut PeerEventLoop, _: Self::Timeout) {
+        println!("Total up: {}, total down: {}",
+                 self.common_info.bytes_uploaded,
+                 self.common_info.bytes_downloaded);
+        event_loop.timeout_ms((), 2_000).unwrap();
+    }
 }
 
 pub type PeerEventLoop<'a> = mio::EventLoop<PeerEventHandler<'a>>;
@@ -1050,9 +1057,6 @@ fn initiate_peer_connections(event_loop: &mut PeerEventLoop,
                             conn_nursery: &mut Slab<HandshakingConnection>) {
     for peer in peers.iter().take(INIT_PEER_CONN_LIMIT) {
         let conn = HandshakingConnection::open(peer, torrent, own_peer_id);
-                                               
-        // put token in slab
-        // register connection with event loop
         let tok = conn_nursery.insert(conn).ok().unwrap();
         event_loop.register_opt(&conn_nursery[tok].conn, tok,
                 Interest::readable() | Interest::writable(),
@@ -1091,6 +1095,7 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                             Interest::readable(), PollOpt::edge()).unwrap();
     initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
                               &mut handler.conn_nursery);
+    event_loop.timeout_ms((), 2_000).unwrap();
     event_loop.run(&mut handler).ok().expect("Error in event_loop.run");
 }
 
