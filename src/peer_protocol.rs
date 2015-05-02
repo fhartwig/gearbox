@@ -1308,6 +1308,7 @@ mod tests {
         assert!(peer_conn.conn_state.peer_interested);
     }
 
+    /*
     #[test]
     fn test_event_handling() {
         use super::PeerEventLoop;
@@ -1345,5 +1346,5 @@ mod tests {
         println!("{:?}", &incoming_buf[..read_bytes]);
         assert_eq!(read_bytes, 0);
         //assert_eq!(incoming_buf, //Interested, Req(42, 0, 0));
-    }
+    }*/
 }
