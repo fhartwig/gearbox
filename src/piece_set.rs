@@ -95,3 +95,28 @@ impl Index<PieceIndex> for PieceSet {
         &self.bitv[index.0 as usize]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use torrent_info::{TorrentInfo, FileInfo};
+    use super::PieceSet;
+    use types::PieceIndex;
+
+    #[test]
+    fn test_pick_piece_from() {
+        let dummy_file =
+            FileInfo { path: From::from("abcd"), length: 512 * 1024 * 1024 };
+        let torrent = TorrentInfo::new("dummy_name".to_string(), 1,
+                                       vec![0u8;60],
+                                       vec![dummy_file], b"").unwrap();
+        let mut to_download = PieceSet::new_empty(&torrent).inverse();
+        let peers_pieces = PieceSet::new_empty(&torrent).inverse();
+        assert!(to_download.pick_piece_from(&peers_pieces).is_some());
+
+        let mut to_download = PieceSet::new_empty(&torrent);
+        to_download.set_true(PieceIndex(0));
+        assert_eq!(to_download.pick_piece_from(&peers_pieces),
+                   Some(PieceIndex(0)));
+        assert!(to_download.pick_piece_from(&peers_pieces).is_none());
+    }
+}
