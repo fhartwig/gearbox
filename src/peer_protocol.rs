@@ -1,8 +1,6 @@
 use std::io;
 use std::collections::{VecDeque, HashMap};
 use std::cmp::min;
-
-use std::mem::swap;
 use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
@@ -620,14 +618,10 @@ impl PeerConnection {
     fn replace_buf(&mut self, offset: u32) -> RingBuf {
         debug!("In PeerConnection::replace_buf");
         // TODO: use recycled buffer if possible
+        debug!("offset: {}, len: {}", offset, &self.recv_buf.bytes().len());
         let mut new_buf = RingBuf::new(RECV_BUF_SIZE);
-        {
-            debug!("offset: {}, len: {}", offset, &self.recv_buf.bytes().len());
-            let remaining_data = &self.recv_buf.bytes()[offset as usize..];
-            new_buf.write_slice(remaining_data);
-        }
-        swap(&mut new_buf, &mut self.recv_buf);
-        new_buf // this is actually the old buf
+        new_buf.write_slice(&self.recv_buf.bytes()[offset as usize..]);
+        ::std::mem::replace(&mut self.recv_buf, new_buf)
     }
 
     #[inline]
