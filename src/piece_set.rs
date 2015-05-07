@@ -40,12 +40,14 @@ impl PieceSet {
 
     /// panics if index is out of bounds
     pub fn set_false(&mut self, index: PieceIndex) {
+        debug_assert!(self.bitv[index.0 as usize], "{:?} not true", index);
         self.bitv.set(index.0 as usize, false);
         self.piece_count -= 1;
     }
 
     /// panics if index is out of bounds
     pub fn set_true(&mut self, index: PieceIndex) {
+        debug_assert!(!self.bitv[index.0 as usize], "{:?} is true", index);
         self.bitv.set(index.0 as usize, true);
         self.piece_count += 1;
     }
@@ -69,8 +71,6 @@ impl PieceSet {
         }
         let randint = rand::thread_rng().gen_range(0, new_pieces);
         let n = self.bitv.iter().zip(&other.bitv).enumerate()
-                    // TODO: why did this work with == instead of &&?
-                    //.filter(|&(_, t)| t.0 == t.1).nth(randint).unwrap().0;
                     .filter(|&(_, t)| t.0 && t.1).nth(randint).unwrap().0;
         let picked_index = PieceIndex(n as u32);
 
