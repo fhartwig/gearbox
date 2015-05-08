@@ -139,8 +139,6 @@ impl ConnectionState {
     }
 }
 
-// TODO: maybe store a "writable" bit that is set to 0 on EWOULDBLOCK and
-// to 1 when we get a writable notification from the os?
 pub struct PeerConnection {
     conn_state: ConnectionState,
     conn: NonBlock<TcpStream>,
@@ -155,6 +153,7 @@ pub struct PeerConnection {
     outgoing_blocks: VecDeque<RingBuf>,
     outgoing_msgs: VecDeque<PeerMsg>, // short messages waiting to be sent
     currently_downloading_piece: Option<CurrentPieceInfo>,
+    requested_blocks: VecDeque<BlockInfo>,
     // the (incremental, current) sha1 hash of the piece
     current_piece_hash: Sha1,
     conn_id: ConnectionId,
@@ -255,6 +254,7 @@ impl PeerConnection {
             outgoing_blocks: VecDeque::new(),
             outgoing_msgs: VecDeque::new(),
             currently_downloading_piece: None,
+            requested_blocks: VecDeque::new(),
             conn_id: id,
             blocks_requested_by_peer: 0,
             token: Token(0), // FIXME: i don't like that the creator of the
@@ -402,7 +402,8 @@ impl PeerConnection {
                 5 => try!(self.handle_bitfield(msg_payload_length, common)),
                 6 => try!(self.handle_request(common)),
                 7 => {
-                    self.handle_incoming_block(msg_payload_length, common);
+                    try!(self.handle_incoming_block(msg_payload_length,
+                                                    common));
                     buffer_replaced = true;
                 },
                 8 => self.cancel_block(msg_offset, common),
@@ -549,10 +550,11 @@ impl PeerConnection {
         Ok(())
     }
 
-    // TODO: check that the block we received is the one we expected
+    // FIXME: handle blocks coming in out-of-order
     fn handle_incoming_block(&mut self, msg_length: usize,
-                    common: &mut CommonInfo) {
+                    common: &mut CommonInfo) -> PeerMsgResult {
         debug!("In PeerConnection::handle_incoming_block");
+        // FIXME: don't unwrap this
         let mut old_buf = self.replace_buf(msg_length as u32);
         let block_info = {
             let mut reader: &[u8] = old_buf.bytes();
@@ -563,6 +565,8 @@ impl PeerConnection {
                 length: msg_length as u32 - 8
             }
         };
+        let expected_block = self.requested_blocks.pop_front().unwrap();
+        assert_eq!(block_info, expected_block); // FIXME: handle this properly
         Buf::advance(&mut old_buf, 8); // skip message header
         {
             let block_data = &old_buf.bytes()[..block_info.length as usize];
@@ -572,18 +576,15 @@ impl PeerConnection {
         let block_for_writer = BlockFromPeer::new(block_info, old_buf);
         common.piece_writer_chan.send(block_for_writer).unwrap();
         common.bytes_downloaded += block_info.length as u64;
-        let o_next_block =
-            self.currently_downloading_piece.as_mut().unwrap().next_block();
+        if block_info.offset + block_info.length ==
+                common.torrent.get_piece_length(block_info.piece_index) {
+            try!(self.handle_completed_piece(block_info.piece_index, common));
+        }
+        let o_next_block = self.currently_downloading_piece.as_mut()
+                               .and_then(|c| c.next_block());
         match o_next_block {
             None => {
-                // we finished downloading this piece
-                {
-                    let cur_piece_ref =
-                        self.currently_downloading_piece.as_ref().unwrap();
-                    common.our_pieces.set_true(cur_piece_ref.index);
-                    common.handler_action =
-                        Some(HandlerAction::FinishedPiece(cur_piece_ref.index));
-                }
+                // we have requested all blocks of this piece
                 self.pick_piece_and_start_downloading(None, common);
                 if self.currently_downloading_piece.is_none() {
                     self.stop_being_interested();
@@ -591,6 +592,20 @@ impl PeerConnection {
             },
             Some(block) => self.request_block(block)
         }
+        Ok(())
+    }
+
+    fn handle_completed_piece(&mut self, index: PieceIndex, common:
+                              &mut CommonInfo) -> PeerMsgResult {
+        let mut digest = [0;20];
+        self.current_piece_hash.result(&mut digest);
+        if digest != common.torrent.get_piece_hash(index) {
+            return Err(MsgError::BadPieceHash)
+        }
+        self.current_piece_hash.reset();
+        common.our_pieces.set_true(index);
+        common.handler_action = Some(HandlerAction::FinishedPiece(index));
+        Ok(())
     }
 
     fn cancel_block(&mut self, msg_offset: usize, common: &CommonInfo) {
@@ -690,6 +705,8 @@ impl PeerConnection {
         };
         if let Some(piece_index) = o_piece {
             self.start_downloading_piece(common, piece_index);
+        } else {
+            self.currently_downloading_piece = None
         }
     }
 
@@ -705,6 +722,7 @@ impl PeerConnection {
 
     fn request_block(&mut self, block: BlockInfo) {
         self.enqueue_msg(PeerMsg::Request(block));
+        self.requested_blocks.push_back(block);
     }
 
     fn become_interested(&mut self) {
@@ -750,7 +768,8 @@ enum MsgError {
     PieceNotAvailable,
     RequestedBlockTooLong,
     BadOffsetLengthCombination,
-    BadBitFieldLength
+    BadBitFieldLength,
+    BadPieceHash
 }
 
 type PeerMsgResult = Result<(), MsgError>;

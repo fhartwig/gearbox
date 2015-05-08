@@ -62,7 +62,6 @@ impl PieceSet {
 
     /// picks a random index that is set in both input PieceSets, removing
     /// the piece index from self
-    // FIXME: write tests for this
     pub fn pick_piece_from(&mut self, other: &Self) -> Option<PieceIndex> {
         let new_pieces = self.bitv.iter().zip(other.bitv.iter())
                              .filter(|&(a, b)| a && b).count();
