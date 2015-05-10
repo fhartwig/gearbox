@@ -185,12 +185,12 @@ impl PieceData {
         }
     }
 
-    fn add_block(&mut self, block_info: BlockInfo, data: RingBuf) {
+    fn add_block(&mut self, block_info: BlockInfo, mut data: RingBuf) {
         debug_assert!(block_info.piece_index == self.index);
         let block_index = block_info.offset / BLOCK_SIZE;
         debug_assert!(self.blocks.get(&(block_index as usize)).is_none());
         self.blocks_received += 1;
-        // FIXME: set RingBuf length to block_info.length
+        data.set_len(block_info.length as usize);
         self.blocks.insert(block_index as usize, data);
     }
 
@@ -200,17 +200,13 @@ impl PieceData {
 
     fn verify(&self, common: &mut CommonInfo) -> bool {
         debug_assert!(self.is_complete());
-        println!("Verifying piece: {:?}", self.index);
         let mut digest = [0;20];
         let mut s = 0;
         for block in self.blocks.values() {
             common.piece_hash.input(block.bytes());
             s += block.bytes().len();
         }
-        println!("Sum: {}", s);
         common.piece_hash.result(&mut digest);
-        println!("Digest: {:?}", digest);
-        println!("expected: {:?}", common.torrent.get_piece_hash(self.index));
         common.piece_hash.reset();
         digest == common.torrent.get_piece_hash(self.index)
     }
