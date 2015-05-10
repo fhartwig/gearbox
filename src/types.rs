@@ -1,4 +1,4 @@
-use mio::buf::{RingBuf, Buf};
+use mio::buf::{RingBuf};
 use mio;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,26 +30,6 @@ pub struct BlockFromDisk {
 pub struct BlockReceiver {
     pub id: ConnectionId,
     pub token: mio::Token
-}
-
-pub struct BlockFromPeer {
-    pub info: BlockInfo,
-    pub data: RingBuf
-}
-
-impl BlockFromPeer {
-    pub fn new(info: BlockInfo, data: RingBuf) -> BlockFromPeer {
-        BlockFromPeer {
-            info: info,
-            data: data
-        }
-    }
-}
-
-impl BlockFromPeer {
-    pub fn as_slice(&self) -> &[u8] {
-        &self.data.bytes()[..self.info.length as usize]
-    }
 }
 
 #[derive(Clone, Copy, Debug)]

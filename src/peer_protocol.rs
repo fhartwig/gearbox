@@ -1,13 +1,14 @@
 use std::io;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque, HashMap, VecMap};
 use std::cmp::min;
+use std::mem;
 use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
 use tracker;
 use tracker::{Tracker, Event};
 use peer::PeerInfo;
-use types::{BlockInfo, BlockFromPeer, BlockFromDisk, BlockRequest, PieceIndex,
+use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
     PieceReaderMessage, ConnectionId, BlockReceiver};
 use piece_set::PieceSet;
 
@@ -152,10 +153,9 @@ pub struct PeerConnection {
         // (the buffers include the message header)
     outgoing_blocks: VecDeque<RingBuf>,
     outgoing_msgs: VecDeque<PeerMsg>, // short messages waiting to be sent
-    currently_downloading_piece: Option<CurrentPieceInfo>,
-    requested_blocks: VecDeque<BlockInfo>,
-    // the (incremental, current) sha1 hash of the piece
-    current_piece_hash: Sha1,
+    currently_downloading_piece: Option<CurrentPieceInfo>, // FIXME: rename this
+    current_piece_blocks: Option<PieceData>,
+    next_piece_blocks: Vec<(BlockInfo, RingBuf)>,
     conn_id: ConnectionId,
     // number of blocks requested by the peer that we still have to deliver
     blocks_requested_by_peer: u8,
@@ -163,6 +163,57 @@ pub struct PeerConnection {
     maybe_writable: bool,
     outgoing_buf_bytes_sent: u32,
     outgoing_block_length: Option<u16>
+}
+
+pub struct PieceData {
+    pub index: PieceIndex,
+    pub blocks: VecMap<RingBuf>,
+    block_count: u16,
+    blocks_received: u16
+}
+
+impl PieceData {
+    fn new(index: PieceIndex, torrent: &TorrentInfo) -> PieceData {
+        let piece_size = torrent.get_piece_length(index);
+        // integer_division rounding up:
+        let block_count = (piece_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        PieceData {
+            index: index,
+            blocks: VecMap::with_capacity(block_count as usize),
+            block_count: block_count as u16,
+            blocks_received: 0
+        }
+    }
+
+    fn add_block(&mut self, block_info: BlockInfo, data: RingBuf) {
+        debug_assert!(block_info.piece_index == self.index);
+        let block_index = block_info.offset / BLOCK_SIZE;
+        debug_assert!(self.blocks.get(&(block_index as usize)).is_none());
+        self.blocks_received += 1;
+        // FIXME: set RingBuf length to block_info.length
+        self.blocks.insert(block_index as usize, data);
+    }
+
+    fn is_complete(&self) -> bool {
+        self.block_count == self.blocks_received
+    }
+
+    fn verify(&self, common: &mut CommonInfo) -> bool {
+        debug_assert!(self.is_complete());
+        println!("Verifying piece: {:?}", self.index);
+        let mut digest = [0;20];
+        let mut s = 0;
+        for block in self.blocks.values() {
+            common.piece_hash.input(block.bytes());
+            s += block.bytes().len();
+        }
+        println!("Sum: {}", s);
+        common.piece_hash.result(&mut digest);
+        println!("Digest: {:?}", digest);
+        println!("expected: {:?}", common.torrent.get_piece_hash(self.index));
+        common.piece_hash.reset();
+        digest == common.torrent.get_piece_hash(self.index)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -201,19 +252,20 @@ struct CommonInfo<'a> {
     /// channel for requests to disk reader thread
     piece_reader_chan: Sender<PieceReaderMessage>,
     /// channel to disk writer thread
-    piece_writer_chan: Sender<BlockFromPeer>,
+    piece_writer_chan: Sender<PieceData>,
     /// blocks that have been requested from disk thread but not delivered yet
     pending_disk_blocks: VecDeque<(ConnectionId, BlockInfo)>,
     /// message from connection to event handler
     handler_action: Option<HandlerAction>,
     bytes_downloaded: u64,
-    bytes_uploaded: u64
+    bytes_uploaded: u64,
+    piece_hash: Sha1,
 }
 
 impl <'a> CommonInfo<'a> {
     pub fn new(torrent: &'a TorrentInfo, our_pieces: PieceSet,
                reader_chan: Sender<PieceReaderMessage>,
-               writer_chan:  Sender<BlockFromPeer>)
+               writer_chan:  Sender<PieceData>)
                -> CommonInfo<'a> {
         let pieces_to_download = our_pieces.inverse();
         CommonInfo {
@@ -226,11 +278,12 @@ impl <'a> CommonInfo<'a> {
             handler_action: None,
             bytes_downloaded: 0,
             bytes_uploaded: 0,
+            piece_hash: Sha1::new()
         }
     }
 }
 
-const BLOCK_SIZE: u32 = 1 << 14;
+pub const BLOCK_SIZE: u32 = 1 << 14;
 
 //buf needs to fit a block (2^14B) + message overhead
 const RECV_BUF_SIZE: usize = 1 << 15;
@@ -249,12 +302,12 @@ impl PeerConnection {
             recv_buf: RingBuf::new(RECV_BUF_SIZE), // TODO: use recycled buffer
             send_buf: RingBuf::new(SEND_BUF_SIZE),
             peers_pieces: PieceSet::new_empty(torrent),
-            current_piece_hash: Sha1::new(),
             peer_request_queue: VecDeque::new(),
             outgoing_blocks: VecDeque::new(),
             outgoing_msgs: VecDeque::new(),
             currently_downloading_piece: None,
-            requested_blocks: VecDeque::new(),
+            current_piece_blocks: None,
+            next_piece_blocks: Vec::new(),
             conn_id: id,
             blocks_requested_by_peer: 0,
             token: Token(0), // FIXME: i don't like that the creator of the
@@ -550,11 +603,10 @@ impl PeerConnection {
         Ok(())
     }
 
-    // FIXME: handle blocks coming in out-of-order
+    // FIXME: check if we actually requested incoming block
     fn handle_incoming_block(&mut self, msg_length: usize,
                     common: &mut CommonInfo) -> PeerMsgResult {
         debug!("In PeerConnection::handle_incoming_block");
-        // FIXME: don't unwrap this
         let mut old_buf = self.replace_buf(msg_length as u32);
         let block_info = {
             let mut reader: &[u8] = old_buf.bytes();
@@ -565,20 +617,26 @@ impl PeerConnection {
                 length: msg_length as u32 - 8
             }
         };
-        let expected_block = self.requested_blocks.pop_front().unwrap();
-        assert_eq!(block_info, expected_block); // FIXME: handle this properly
         Buf::advance(&mut old_buf, 8); // skip message header
-        {
-            let block_data = &old_buf.bytes()[..block_info.length as usize];
-            self.current_piece_hash.input(block_data);
-        }
-        // send buffer with block info to writer thread
-        let block_for_writer = BlockFromPeer::new(block_info, old_buf);
-        common.piece_writer_chan.send(block_for_writer).unwrap();
-        common.bytes_downloaded += block_info.length as u64;
-        if block_info.offset + block_info.length ==
-                common.torrent.get_piece_length(block_info.piece_index) {
-            try!(self.handle_completed_piece(block_info.piece_index, common));
+        let piece_complete = {
+            if self.current_piece_blocks.is_none() {
+                self.current_piece_blocks = Some(
+                    PieceData::new(block_info.piece_index,
+                                    &common.torrent)
+                );
+            }
+            let current_piece_blocks =
+                self.current_piece_blocks.as_mut().unwrap();
+            if block_info.piece_index == current_piece_blocks.index {
+                current_piece_blocks.add_block(block_info, old_buf)
+            } else {
+                self.next_piece_blocks.push((block_info, old_buf));
+            }
+            common.bytes_downloaded += block_info.length as u64;
+            current_piece_blocks.is_complete()
+        };
+        if piece_complete {
+            try!(self.handle_completed_piece(common));
         }
         let o_next_block = self.currently_downloading_piece.as_mut()
                                .and_then(|c| c.next_block());
@@ -595,15 +653,37 @@ impl PeerConnection {
         Ok(())
     }
 
-    fn handle_completed_piece(&mut self, index: PieceIndex, common:
-                              &mut CommonInfo) -> PeerMsgResult {
-        let mut digest = [0;20];
-        self.current_piece_hash.result(&mut digest);
-        if digest != common.torrent.get_piece_hash(index) {
+    fn handle_completed_piece(&mut self, common: &mut CommonInfo)
+                              -> PeerMsgResult {
+        let new_current_piece_blocks = if !self.next_piece_blocks.is_empty() {
+            let next_piece_blocks = mem::replace(&mut self.next_piece_blocks,
+                                                 Vec::new());
+            let (info, data) = self.next_piece_blocks.pop().unwrap();
+            let new_current_piece_index = info.piece_index;
+            let mut new_current_piece_blocks =
+                PieceData::new(new_current_piece_index, &common.torrent);
+            new_current_piece_blocks.add_block(info, data);
+            for (info, data) in next_piece_blocks {
+                if info.piece_index == new_current_piece_index {
+                    new_current_piece_blocks.add_block(info, data);
+                } else {
+                    self.next_piece_blocks.push((info, data));
+                }
+            }
+            Some(new_current_piece_blocks)
+        } else {
+            None
+        };
+
+        let current_piece_blocks = mem::replace(&mut self.current_piece_blocks,
+                                                new_current_piece_blocks)
+                                        .unwrap();
+        let index = current_piece_blocks.index;
+        if !current_piece_blocks.verify(common) {
             return Err(MsgError::BadPieceHash)
         }
-        self.current_piece_hash.reset();
         common.our_pieces.set_true(index);
+        common.piece_writer_chan.send(current_piece_blocks).unwrap();
         common.handler_action = Some(HandlerAction::FinishedPiece(index));
         Ok(())
     }
@@ -636,7 +716,7 @@ impl PeerConnection {
         debug!("offset: {}, len: {}", offset, &self.recv_buf.bytes().len());
         let mut new_buf = RingBuf::new(RECV_BUF_SIZE);
         new_buf.write_slice(&self.recv_buf.bytes()[offset as usize..]);
-        ::std::mem::replace(&mut self.recv_buf, new_buf)
+        mem::replace(&mut self.recv_buf, new_buf)
     }
 
     #[inline]
@@ -722,7 +802,6 @@ impl PeerConnection {
 
     fn request_block(&mut self, block: BlockInfo) {
         self.enqueue_msg(PeerMsg::Request(block));
-        self.requested_blocks.push_back(block);
     }
 
     fn become_interested(&mut self) {
@@ -840,7 +919,7 @@ struct PeerEventHandler<'a> {
 impl <'a>PeerEventHandler<'a> {
     fn new(sock: NonBlock<TcpListener>, torrent: &'a TorrentInfo,
            piece_reader_chan: Sender<PieceReaderMessage>,
-           block_writer_chan: Sender<BlockFromPeer>,
+           block_writer_chan: Sender<PieceData>,
            peer_id: &'a[u8;20], tracker: Tracker) -> PeerEventHandler<'a> {
         let our_pieces = torrent.check_downloaded_pieces();
         info!("downloaded_pieces: {:?}", our_pieces);
@@ -1083,7 +1162,7 @@ pub const LISTENING_PORT: u16 = 8765;
 
 pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                       torrent: &'a TorrentInfo,
-                      block_writer_chan: Sender<BlockFromPeer>,
+                      block_writer_chan: Sender<PieceData>,
                       piece_reader_chan: Sender<PieceReaderMessage>,
                       peer_id: &'a [u8;20],
                       tracker: Tracker) {
@@ -1159,7 +1238,7 @@ mod tests {
     fn mk_common_info<'a>(torrent: &'a TorrentInfo)
                       -> (CommonInfo<'a>,
                           Receiver<PieceReaderMessage>,
-                          Receiver<BlockFromPeer>) {
+                          Receiver<PieceData>) {
         let (reader_msg_tx, reader_msg_rx) = channel();
         let (block_tx, block_rx) = channel();
         let our_pieces = PieceSet::new_empty(&torrent);
@@ -1181,7 +1260,7 @@ mod tests {
     fn mk_peer_event_handler<'a> (torrent: &'a TorrentInfo,
                                   peer_id: &'a [u8; 20])
         -> (super::PeerEventHandler<'a>,
-            Receiver<BlockFromPeer>,
+            Receiver<PieceData>,
             Receiver<PieceReaderMessage>) {
         use super::PeerEventHandler;
         use std::net::TcpListener;

@@ -6,11 +6,12 @@ use std::collections::vec_map::{VecMap, Entry};
 use std::mem;
 use std::marker::PhantomData;
 
-use mio::buf::{MutBuf, RingBuf};
+use mio::buf::{Buf, MutBuf, RingBuf};
 use mio::Sender;
 
 use torrent_info::TorrentInfo;
-use types::{BlockFromDisk, BlockFromPeer, BlockRequest, BlockInfo,
+use peer_protocol::{PieceData, BLOCK_SIZE};
+use types::{BlockFromDisk, BlockRequest, BlockInfo,
     ConnectionId, PieceReaderMessage};
 
 
@@ -108,21 +109,25 @@ impl <'a> HandleCacheTrait for HandleCache<'a, W> {
 // TODO: optimisation: reuse the data vectors
 /// write piece data out to disk
 pub fn file_writer(torrent_info: &TorrentInfo,
-                   chan: Receiver<BlockFromPeer>) {
+                   chan: Receiver<PieceData>) {
     let mut handles: HandleCache<W> = HandleCache::new(torrent_info);
-    for block in chan.iter() {
-        info!("Disk writer chan got a block!");
-        let sections = torrent_info.map_block(
-            block.info.piece_index,
-            block.info.offset,
-            block.info.length);
-        let mut remaining_data = block.as_slice();
-        for section in sections {
-            let handle = handles.get(section.file_index);
-            // TODO: better error handling?
-            handle.seek(SeekFrom::Start(section.offset)).unwrap();
-            handle.write_all(&remaining_data[..section.length as usize]).unwrap();
-            remaining_data = &remaining_data[section.length as usize..];
+    for piece in chan.iter() {
+        // FIXME: write the whole piece at once (using writev, probably)
+        info!("Disk writer chan got a piece!");
+        for (index, block) in piece.blocks.iter() {
+            let block_offset = index as u32 * BLOCK_SIZE;
+            let sections = torrent_info.map_block(
+                piece.index,
+                block_offset,
+                Buf::remaining(block) as u32);
+            let mut remaining_data = block.bytes();
+            for section in sections {
+                let handle = handles.get(section.file_index);
+                // TODO: better error handling?
+                handle.seek(SeekFrom::Start(section.offset)).unwrap();
+                handle.write_all(&remaining_data[..section.length as usize]).unwrap();
+                remaining_data = &remaining_data[section.length as usize..];
+            }
         }
     }
 }

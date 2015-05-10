@@ -93,9 +93,7 @@ impl TorrentInfo {
 
     /// panics when passed an invalid piece index
     pub fn get_piece_length(&self, piece_index: PieceIndex) -> u32 {
-        if piece_index.0 as u32 > self.piece_count() {
-            panic!("get_piece_length: Bad piece index");
-        }
+        debug_assert!(self.piece_count() > piece_index.0 as u32);
         min(self.piece_length,
             (self.total_size -
                 (piece_index.0 as u64 * self.piece_length as u64))
@@ -113,10 +111,8 @@ impl TorrentInfo {
     }
 
     pub fn get_piece_hash(&self, piece_index: PieceIndex) -> &[u8] {
+        debug_assert!(self.piece_count() > piece_index.0 as u32);
         let offset = piece_index.0 as usize * 20;
-        if offset >= self.hashes.len() {
-            panic!("Invalid piece index: {:?}", piece_index);
-        }
         &self.hashes[offset..offset + 20]
     }
 
@@ -180,9 +176,6 @@ impl TorrentInfo {
     }
 
     pub fn bytes_left_to_download(&self, pieces: &PieceSet) -> u64 {
-        println!("total size: {}", self.total_size);
-        println!("piece count: {}", pieces.count());
-        println!("piece length: {}", self.piece_length);
         let mut downloaded_bytes =
             (pieces.count() as u64) * (self.piece_length as u64);
         let last_piece_index = PieceIndex(self.piece_count() - 1);
