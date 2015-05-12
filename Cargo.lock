@@ -6,7 +6,7 @@ dependencies = [
  "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.3.14 (git+https://github.com/hyperium/hyper)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "mio 0.3.4 (git+https://github.com/carllerche/mio)",
+ "mio 0.4.0 (git+https://github.com/carllerche/mio)",
  "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (git+https://github.com/DaGenix/rust-crypto)",
@@ -27,6 +27,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "bytes"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "clock_ticks"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "cookie"
@@ -118,13 +126,23 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.3.4"
-source = "git+https://github.com/carllerche/mio#d4a0853372c0eb6d72446a4e8d426a2800507e93"
+version = "0.4.0"
+source = "git+https://github.com/carllerche/mio#a8abadc2c6d1403b416a0bd70050091179723cf4"
 dependencies = [
  "bytes 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.3.5 (git+https://github.com/carllerche/nix-rust)",
+ "winapi 0.1.17 (git+https://github.com/retep998/winapi-rs)",
+]
+
+[[package]]
+name = "nix"
+version = "0.3.5"
+source = "git+https://github.com/carllerche/nix-rust#ecbbf1a8176130ca845b23c3e9dfe37d45da3c13"
+dependencies = [
+ "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -248,5 +266,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "matches 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "winapi"
+version = "0.1.17"
+source = "git+https://github.com/retep998/winapi-rs#a6edca2165a28fe039b98a6a63b1efc6e7c0e998"
+dependencies = [
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

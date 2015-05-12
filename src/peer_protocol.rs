@@ -2,6 +2,7 @@ use std::io;
 use std::collections::{VecDeque, HashMap, VecMap};
 use std::cmp::min;
 use std::mem;
+use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
@@ -13,10 +14,10 @@ use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
 use piece_set::PieceSet;
 
 use mio;
-use mio::{NonBlock, Token, PollOpt, Interest, TryRead, TryWrite};
+use mio::{Token, PollOpt, Interest, TryRead, TryWrite};
+use mio::tcp::{TcpStream, TcpListener};
 use mio::buf::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
 use mio::util::Slab;
-use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr, TcpListener, TcpStream};
 
 use crypto::sha1::Sha1;
 use crypto::digest::Digest;
@@ -24,14 +25,14 @@ use crypto::digest::Digest;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 struct HandshakingConnection {
-    conn: NonBlock<TcpStream>,
+    conn: TcpStream,
     recv_buf: Vec<u8>,
     send_buf: ByteBuf,
     bytes_received: usize
 }
 
 impl HandshakingConnection {
-    fn new(conn: NonBlock<TcpStream>, torrent: &TorrentInfo, own_id: &[u8])
+    fn new(conn: TcpStream, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
         debug!("In handshakingConn::new");
         let mut send_buf = ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH);
@@ -53,8 +54,7 @@ impl HandshakingConnection {
     fn open(peer: &PeerInfo, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
         debug!("In handshakingConn::open");
-        let sock = mio::tcp::v4().unwrap(); // TODO: error handling
-        let (stream, _) = sock.connect(&SocketAddr::V4(peer.addr)).unwrap(); // TODO: what is the _ for?
+        let stream = TcpStream::connect(&SocketAddr::V4(peer.addr)).unwrap();
         HandshakingConnection::new(stream, torrent, own_id)
     }
 
@@ -96,7 +96,7 @@ impl HandshakingConnection {
 
     /// finish handshake, creating a new PeerConnection
     fn finish_handshake(self, torrent: &TorrentInfo)
-            -> Result<NonBlock<TcpStream>, &str> {
+            -> Result<TcpStream, &str> {
         try!(HandshakingConnection::verify_handshake(&self.recv_buf, torrent));
         info!("Yay! Finished handshake!");
         Ok(self.conn)
@@ -142,7 +142,7 @@ impl ConnectionState {
 
 pub struct PeerConnection {
     conn_state: ConnectionState,
-    conn: NonBlock<TcpStream>,
+    conn: TcpStream,
     recv_buf: RingBuf,
     send_buf: RingBuf,
     peers_pieces: PieceSet,
@@ -201,11 +201,6 @@ impl PieceData {
     fn verify(&self, common: &mut CommonInfo) -> bool {
         debug_assert!(self.is_complete());
         let mut digest = [0;20];
-        let mut s = 0;
-        for block in self.blocks.values() {
-            common.piece_hash.input(block.bytes());
-            s += block.bytes().len();
-        }
         common.piece_hash.result(&mut digest);
         common.piece_hash.reset();
         digest == common.torrent.get_piece_hash(self.index)
@@ -290,7 +285,7 @@ const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 const CONCURRENT_REQUESTS_PER_PEER: u8 = 8;
 
 impl PeerConnection {
-    fn new(peer_conn: NonBlock<TcpStream>, torrent: &TorrentInfo,
+    fn new(peer_conn: TcpStream, torrent: &TorrentInfo,
            id: ConnectionId) -> PeerConnection {
         PeerConnection {
             conn_state: ConnectionState::new(),
@@ -903,7 +898,7 @@ enum HandlerAction {
 
 
 struct PeerEventHandler<'a> {
-    listening_sock: NonBlock<TcpListener>,
+    listening_sock: TcpListener,
     open_conns: Slab<PeerConnection>,
     conn_nursery: Slab<HandshakingConnection>,
     cur_conn_id: u32,
@@ -913,7 +908,7 @@ struct PeerEventHandler<'a> {
 }
 
 impl <'a>PeerEventHandler<'a> {
-    fn new(sock: NonBlock<TcpListener>, torrent: &'a TorrentInfo,
+    fn new(sock: TcpListener, torrent: &'a TorrentInfo,
            piece_reader_chan: Sender<PieceReaderMessage>,
            block_writer_chan: Sender<PieceData>,
            peer_id: &'a[u8;20], tracker: Tracker) -> PeerEventHandler<'a> {
@@ -1164,10 +1159,7 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                       tracker: Tracker) {
     let listening_addr = SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0), LISTENING_PORT));
-    let sock = mio::tcp::v4().unwrap_or_else(|_| panic!("Error creating socket"));
-    sock.bind(&listening_addr).unwrap();
-    let listener = sock.listen(20).unwrap();
-    // listen on socket for incoming connnection
+    let listener = TcpListener::bind(&listening_addr).unwrap();
     let mut handler = PeerEventHandler::new(listener, torrent,
                                             piece_reader_chan,
                                             block_writer_chan, peer_id,
