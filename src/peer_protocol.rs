@@ -201,6 +201,9 @@ impl PieceData {
     fn verify(&self, common: &mut CommonInfo) -> bool {
         debug_assert!(self.is_complete());
         let mut digest = [0;20];
+        for block in self.blocks.values() {
+            common.piece_hash.input(block.bytes());
+        }
         common.piece_hash.result(&mut digest);
         common.piece_hash.reset();
         digest == common.torrent.get_piece_hash(self.index)
@@ -618,6 +621,7 @@ impl PeerConnection {
             }
             let current_piece_blocks =
                 self.current_piece_blocks.as_mut().unwrap();
+            old_buf.set_len(block_info.length as usize);
             if block_info.piece_index == current_piece_blocks.index {
                 current_piece_blocks.add_block(block_info, old_buf)
             } else {
