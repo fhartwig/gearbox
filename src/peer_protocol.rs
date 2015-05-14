@@ -10,8 +10,9 @@ use tracker;
 use tracker::{Tracker, Event};
 use peer::PeerInfo;
 use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
-    PieceReaderMessage, ConnectionId, BlockReceiver};
+    PieceReaderMessage, ConnectionId, BlockReceiver, Stats};
 use piece_set::PieceSet;
+use ui::UI;
 
 use mio;
 use mio::{Token, PollOpt, Interest, TryRead, TryWrite};
@@ -243,7 +244,7 @@ impl CurrentPieceInfo {
     }
 }
 
-struct CommonInfo<'a> {
+pub struct CommonInfo<'a> {
     torrent: &'a TorrentInfo,
     /// pieces we have successfully downloaded
     our_pieces: PieceSet,
@@ -279,6 +280,14 @@ impl <'a> CommonInfo<'a> {
             bytes_downloaded: 0,
             bytes_uploaded: 0,
             piece_hash: Sha1::new()
+        }
+    }
+
+    pub fn current_stats(&self) -> Stats {
+        Stats {
+            uploaded: self.bytes_uploaded,
+            downloaded: self.bytes_downloaded,
+            remaining: self.torrent.bytes_left_to_download(&self.our_pieces)
         }
     }
 }
@@ -897,7 +906,8 @@ struct PeerEventHandler<'a> {
     cur_conn_id: u32,
     common_info: CommonInfo<'a>,
     own_peer_id: &'a [u8;20],
-    tracker: Tracker
+    tracker: Tracker,
+    ui: UI
 }
 
 impl <'a>PeerEventHandler<'a> {
@@ -906,15 +916,18 @@ impl <'a>PeerEventHandler<'a> {
            block_writer_chan: Sender<PieceData>,
            peer_id: &'a[u8;20], tracker: Tracker) -> PeerEventHandler<'a> {
         let our_pieces = torrent.check_downloaded_pieces();
+        let common = CommonInfo::new(torrent, our_pieces, piece_reader_chan,
+                                     block_writer_chan);
+        let init_stats = common.current_stats();
         PeerEventHandler {
             open_conns: Slab::new_starting_at(Token(1024), 128),
             conn_nursery: Slab::new_starting_at(Token(2), 128),
             listening_sock: sock,
-            common_info: CommonInfo::new(torrent, our_pieces, piece_reader_chan,
-                                         block_writer_chan),
+            common_info: common,
             own_peer_id: peer_id,
             cur_conn_id: 0,
-            tracker: tracker
+            tracker: tracker,
+            ui: UI::init(init_stats)
         }
     }
 
@@ -1111,13 +1124,11 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     }
 
     fn timeout(&mut self, event_loop: &mut PeerEventLoop, _: Self::Timeout) {
-        let common = &self.common_info;
-        println!("Total up: {}, total down: {}, remaining: {}",
-                 common.bytes_uploaded,
-                 common.bytes_downloaded,
-                 common.torrent.bytes_left_to_download(&common.our_pieces)
-        );
-        event_loop.timeout_ms((), 2_000).unwrap();
+        let quit = self.ui.update(&self.common_info);
+        if quit {
+            event_loop.shutdown();
+        }
+        event_loop.timeout_ms((), 1_000).unwrap();
     }
 }
 
@@ -1172,7 +1183,7 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::{CommonInfo, PeerMsg};
+    use super::PeerMsg;
     use std::net::SocketAddr;
     use std::net::TcpStream as StdTcpStream;
     use std::io::{Read, Write};

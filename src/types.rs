@@ -38,3 +38,10 @@ pub enum PieceReaderMessage {
     CancelRequest(BlockInfo, ConnectionId),
     CancelRequestsForConnection(ConnectionId)
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Stats {
+    pub downloaded: u64,
+    pub uploaded: u64,
+    pub remaining: u64
+}

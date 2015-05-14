@@ -10,6 +10,7 @@ dependencies = [
  "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (git+https://github.com/DaGenix/rust-crypto)",
+ "rustbox 0.6.0 (git+https://github.com/gchp/rustbox.git)",
  "url 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -48,12 +49,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum_primitive"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "num 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 0.1.30 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "gag"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -155,6 +173,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "num_cpus"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -223,6 +250,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustbox"
+version = "0.6.0"
+source = "git+https://github.com/gchp/rustbox.git#f14583eacc52b31cc91f265b72c5f7c68a4d2480"
+dependencies = [
+ "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "enum_primitive 0.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gag 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "num 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",
+ "termbox-sys 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "rustc-serialize"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -233,6 +272,23 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tempfile"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "termbox-sys"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

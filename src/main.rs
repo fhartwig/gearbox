@@ -1,4 +1,4 @@
-#![feature(collections, core, scoped)]
+#![feature(collections, core, scoped, std_misc)]
 #![cfg_attr(test, feature(from_raw_os))]
 
 extern crate url;
@@ -10,6 +10,7 @@ extern crate rand;
 extern crate log;
 extern crate env_logger;
 extern crate byteorder;
+extern crate rustbox;
 
 #[cfg(test)]
 extern crate nix;
@@ -31,6 +32,7 @@ mod files;
 mod peer_protocol;
 mod types;
 mod piece_set;
+mod ui;
 
 fn main() {
     env_logger::init().unwrap();
