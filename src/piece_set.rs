@@ -40,14 +40,12 @@ impl PieceSet {
 
     /// panics if index is out of bounds
     pub fn set_false(&mut self, index: PieceIndex) {
-        debug_assert!(self.bitv[index.0 as usize], "{:?} not true", index);
         self.bitv.set(index.0 as usize, false);
         self.piece_count -= 1;
     }
 
     /// panics if index is out of bounds
     pub fn set_true(&mut self, index: PieceIndex) {
-        debug_assert!(!self.bitv[index.0 as usize], "{:?} is true", index);
         self.bitv.set(index.0 as usize, true);
         self.piece_count += 1;
     }
