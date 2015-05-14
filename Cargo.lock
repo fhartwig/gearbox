@@ -25,7 +25,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "bytes"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -127,9 +127,9 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.4.0"
-source = "git+https://github.com/carllerche/mio#a8abadc2c6d1403b416a0bd70050091179723cf4"
+source = "git+https://github.com/carllerche/mio#e753c88d3fb396ed4d54a304e131c1f2aa60160d"
 dependencies = [
- "bytes 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bytes 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "nix 0.3.5 (git+https://github.com/carllerche/nix-rust)",
