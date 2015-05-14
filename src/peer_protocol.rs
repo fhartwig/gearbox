@@ -1187,22 +1187,23 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
 mod tests {
     use super::*;
     use super::{CommonInfo, PeerMsg};
-    use std::net::{TcpStream, SocketAddr};
-    use std::os::unix::io::FromRawFd;
+    use std::net::SocketAddr;
+    use std::net::TcpStream as StdTcpStream;
     use std::io::{Read, Write};
+    use std::os::unix::io::FromRawFd;
     use std::sync::mpsc::{channel, Sender, Receiver};
     use std::str::FromStr;
 
     use piece_set::PieceSet;
     use torrent_info::{TorrentInfo, FileInfo};
     use types::*;
-    use mio::{IntoNonBlock, NonBlock, Token};
+    use mio::{Token, FromFd};
+    use mio::tcp::{TcpStream, TcpListener};
     use mio;
 
     // TODO: proper error handling, although it's not that important for tests
-    fn get_socket_pair() -> (TcpStream, TcpStream) {
+    fn get_socket_pair() -> (TcpStream, StdTcpStream) {
         use nix::sys::socket::{SockType, AddressFamily, SockFlag, socketpair};
-        use mio::IntoNonBlock;
 
         let (our_sock, peer_sock) =
             match socketpair(AddressFamily::Unix, SockType::Stream,
@@ -1211,7 +1212,7 @@ mod tests {
                 Err(_) => panic!("oh noes, socketpair doesn't work")
             };
 
-        let our_stream = unsafe {FromRawFd::from_raw_fd(our_sock)};
+        let our_stream = unsafe {FromFd::from_fd(our_sock)};
         let peer_stream = unsafe {FromRawFd::from_raw_fd(peer_sock)};
 
         (our_stream, peer_stream)
@@ -1241,11 +1242,10 @@ mod tests {
     }
 
 
-    fn mk_peer_conn(torrent: &TorrentInfo) -> (PeerConnection, TcpStream) {
+    fn mk_peer_conn(torrent: &TorrentInfo) -> (PeerConnection, StdTcpStream) {
         // TODO: sensible variable names
         let (our_conn, peer_conn) = get_socket_pair();
-        let nb_our_conn = IntoNonBlock::into_non_block(our_conn).unwrap();
-        let p_conn = PeerConnection::new(nb_our_conn, torrent, ConnectionId(1));
+        let p_conn = PeerConnection::new(our_conn, torrent, ConnectionId(1));
         (p_conn, peer_conn)
     }
 
@@ -1255,7 +1255,7 @@ mod tests {
             Receiver<PieceData>,
             Receiver<PieceReaderMessage>) {
         use super::PeerEventHandler;
-        use std::net::TcpListener;
+        use std::net::ToSocketAddrs;
         use url::Url;
         use tracker::Tracker;
 
@@ -1263,8 +1263,9 @@ mod tests {
         let (piece_writer_sender, piece_writer_receiver) = channel();
         let tracker_url = Url::parse("http://localhost:8080/announce").unwrap();
         let tracker = Tracker::new(tracker_url);
-        let listener = TcpListener::bind("0.0.0.0:0").unwrap();
-        let listener = IntoNonBlock::into_non_block(listener).unwrap();
+        let socket_addr = ToSocketAddrs::to_socket_addrs("0.0.0.0:0")
+                                        .unwrap().next().unwrap();
+        let listener = TcpListener::bind(&socket_addr).unwrap();
 
         let handler = PeerEventHandler::new(listener, torrent,
                                             piece_reader_sender,
@@ -1279,7 +1280,7 @@ mod tests {
         let (our_conn, mut peer_conn) = get_socket_pair();
         let our_id = [42;20];
         let peer_id = [23;20];
-        let mut nb_conn = IntoNonBlock::into_non_block(our_conn).unwrap();
+        let mut nb_conn = our_conn;
         let mut hs_conn =
             super::HandshakingConnection::new(nb_conn, &torrent, &our_id);
         assert!(!hs_conn.handshake_finished());
