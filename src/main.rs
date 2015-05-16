@@ -1,4 +1,4 @@
-#![feature(collections, core, scoped, std_misc)]
+#![feature(collections, core, scoped)]
 #![cfg_attr(test, feature(from_raw_os))]
 
 extern crate url;
@@ -20,8 +20,8 @@ use std::path::PathBuf;
 use std::io::Read;
 use std::sync::mpsc::channel;
 
-use peer_protocol::{run_event_loop};
-use tracker::{Tracker};
+use peer_protocol::run_event_loop;
+use tracker::Tracker;
 use torrent_info::TorrentInfo;
 
 mod bencode;
