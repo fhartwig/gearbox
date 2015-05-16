@@ -296,7 +296,7 @@ pub const BLOCK_SIZE: u32 = 1 << 14;
 
 //buf needs to fit a block (2^14B) + message overhead
 const RECV_BUF_SIZE: usize = 1 << 15;
-const SEND_BUF_SIZE: usize = 1 << 15;
+pub const SEND_BUF_SIZE: usize = 1 << 15;
 
 const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 

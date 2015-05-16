@@ -1,6 +1,6 @@
 use std::sync::mpsc::{Receiver, RecvError};
 use std::fs::{File, OpenOptions};
-use std::io::{Seek, SeekFrom, Write, Read};
+use std::io::{self, Seek, SeekFrom, Write, Read};
 use std::collections::VecDeque;
 use std::collections::vec_map::{VecMap, Entry};
 use std::mem;
@@ -9,8 +9,10 @@ use std::marker::PhantomData;
 use mio::buf::{Buf, MutBuf, RingBuf};
 use mio::Sender;
 
+use byteorder::{WriteBytesExt, BigEndian};
+
 use torrent_info::TorrentInfo;
-use peer_protocol::{PieceData, BLOCK_SIZE};
+use peer_protocol::{PieceData, BLOCK_SIZE, SEND_BUF_SIZE};
 use types::{BlockFromDisk, BlockRequest, BlockInfo,
     ConnectionId, PieceReaderMessage};
 
@@ -101,18 +103,13 @@ impl <'a> HandleCacheTrait for HandleCache<'a, W> {
     }
 }
 
-// TODO: if we have two file descriptors for the same file (e.g. one for
-    // reading, one for writing), does seeking (or reading/writing) in one
-    // change the offset in the other?
-
-
-// TODO: optimisation: reuse the data vectors
+// TODO: optimisation: reuse the buffers
 /// write piece data out to disk
 pub fn file_writer(torrent_info: &TorrentInfo,
                    chan: Receiver<PieceData>) {
     let mut handles: HandleCache<W> = HandleCache::new(torrent_info);
     for piece in chan.iter() {
-        // FIXME: write the whole piece at once (using writev, probably)
+        // TODO (optimisation): write the whole piece at once (using writev)
         info!("Disk writer chan got a piece!");
         for (index, block) in piece.blocks.iter() {
             let block_offset = index as u32 * BLOCK_SIZE;
@@ -123,7 +120,6 @@ pub fn file_writer(torrent_info: &TorrentInfo,
             let mut remaining_data = block.bytes();
             for section in sections {
                 let handle = handles.get(section.file_index);
-                // TODO: better error handling?
                 handle.seek(SeekFrom::Start(section.offset)).unwrap();
                 handle.write_all(&remaining_data[..section.length as usize]).unwrap();
                 remaining_data = &remaining_data[section.length as usize..];
@@ -188,7 +184,8 @@ impl <'a> FileReader<'a> {
         // XXX: we can't just send the raw data back, we need to include the
             // headers (or at least leave space for them so we can
             // write them somewhere in peer_protocol
-        let mut data = RingBuf::new(block_info.length as usize);
+        let mut data = RingBuf::new(SEND_BUF_SIZE);
+        write_message_header(&mut data, block_info);
         let mut cur_offset_in_piece = 0;
         for section in self.torrent.map_block(block_info.piece_index,
                                               block_info.offset,
@@ -201,6 +198,7 @@ impl <'a> FileReader<'a> {
             handle.read(buf).unwrap();
             cur_offset_in_piece += section.length as usize;
         }
+        MutBuf::advance(&mut data, block_info.length as usize);
         let block = BlockFromDisk {
             info: *block_info,
             data: data,
@@ -211,12 +209,19 @@ impl <'a> FileReader<'a> {
     }
 }
 
+fn write_message_header<W: io::Write>(writer: &mut W, info: &BlockInfo) {
+    let msg_length = info.length + 1 + 4 + 4;
+    writer.write_u32::<BigEndian>(msg_length).unwrap();
+    writer.write_u8(7).unwrap();
+    writer.write_u32::<BigEndian>(info.piece_index.0).unwrap();
+    writer.write_u32::<BigEndian>(info.offset).unwrap();
+}
+
 pub fn run_file_reader(torrent_info: &TorrentInfo,
                    msgs: Receiver<PieceReaderMessage>,
                    event_loop_sender: Sender<BlockFromDisk>) {
-    let mut file_reader =
-        FileReader::new(torrent_info, msgs, event_loop_sender);
-    file_reader.run();
+    let mut reader = FileReader::new(torrent_info, msgs, event_loop_sender);
+    reader.run();
 }
 
 
