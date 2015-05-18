@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
 use tracker;
-use tracker::{Tracker, Event};
+use tracker::{Tracker, Event, TrackerRequest};
 use peer::PeerInfo;
 use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
     PieceReaderMessage, ConnectionId, BlockReceiver, Stats};
@@ -1006,11 +1006,17 @@ impl <'a>PeerEventHandler<'a> {
         let common = &self.common_info;
         let bytes_remaining =
             common.torrent.bytes_left_to_download(&common.our_pieces);
-        self.tracker.make_request(&self.common_info.torrent.info_hash(),
-                                  self.own_peer_id, event,
-                                  common.bytes_uploaded,
-                                  common.bytes_downloaded,
-                                  bytes_remaining, LISTENING_PORT).unwrap();
+        let request = TrackerRequest {
+            info_hash: &self.common_info.torrent.info_hash(),
+            peer_id: self.own_peer_id,
+            event: event,
+            uploaded: common.bytes_uploaded,
+            downloaded: common.bytes_downloaded,
+            left: bytes_remaining,
+            port: LISTENING_PORT
+        };
+
+        self.tracker.make_request(&request).unwrap();
     }
 
     fn close_connection(&mut self, token: Token) {
@@ -1167,11 +1173,16 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                                             tracker);
     let bytes_left_to_download =
         torrent.bytes_left_to_download(&handler.common_info.our_pieces);
-    let peers = handler.tracker.make_request(torrent.info_hash(), peer_id,
-                                             Some(Event::Started), 0, 0,
-                                             bytes_left_to_download,
-                                             LISTENING_PORT)
-                               .unwrap();
+    let tracker_request = TrackerRequest {
+        info_hash: torrent.info_hash(),
+        peer_id: peer_id,
+        event: Some(Event::Started),
+        uploaded: 0,
+        downloaded: 0,
+        left: bytes_left_to_download,
+        port: LISTENING_PORT
+    };
+    let peers = handler.tracker.make_request(&tracker_request).unwrap();
     event_loop.register_opt(&handler.listening_sock, LISTENER_TOKEN,
                             Interest::readable(), PollOpt::edge()).unwrap();
     initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
