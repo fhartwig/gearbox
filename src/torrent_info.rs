@@ -1,5 +1,5 @@
 use bencode::{BValue, FromBValue, ConversionResult};
-use bencode::BValue::BDict;
+use bencode::BValue::{BDict, BList};
 use bencode::ConversionError::{OtherError, WrongBValueConstructor, KeyDoesNotExist};
 use piece_set::PieceSet;
 use crypto::sha1::Sha1;
@@ -258,13 +258,29 @@ impl <'a>FromBValue<'a> for FileInfo {
                 match (dict.remove(&b"path"[..]),
                        dict.remove(&b"length"[..])) {
                     (Some(bv_path), Some(bv_length)) => {
-                        let path: &str = try!(FromBValue::from_bvalue(bv_path));
+                        let path = try!(FromBValue::from_bvalue(bv_path));
                         let length = try!(FromBValue::from_bvalue(bv_length));
-                        Ok(FileInfo{path: PathBuf::from(path), length: length})
+                        Ok(FileInfo{path: path, length: length})
                     }
                     _ => Err(KeyDoesNotExist)
                 }
             }
+            _ => Err(WrongBValueConstructor)
+        }
+    }
+}
+
+impl <'a> FromBValue<'a> for PathBuf {
+    fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<PathBuf> {
+        match bvalue {
+            BList(l) => {
+                let mut path = PathBuf::new();
+                for segment in l {
+                    let seg: &str = try!(FromBValue::from_bvalue(segment));
+                    path.push(seg);
+                }
+                Ok(path)
+            },
             _ => Err(WrongBValueConstructor)
         }
     }
