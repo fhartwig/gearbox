@@ -2,7 +2,6 @@ use bencode::{BValue, FromBValue, ConversionResult};
 use bencode::BValue::BString;
 use bencode::ConversionError::{WrongBValueConstructor, OtherError};
 
-//use mio::net::SockAddr;
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 #[derive(Debug)]
