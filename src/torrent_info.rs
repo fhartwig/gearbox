@@ -1,19 +1,17 @@
 use bencode::{BValue, FromBValue, ConversionResult};
-use bencode::BValue::{BDict, BList};
 use bencode::ConversionError::{OtherError, WrongBValueConstructor, KeyDoesNotExist};
 use piece_set::PieceSet;
+use types::PieceIndex;
+
 use crypto::sha1::Sha1;
 use crypto::digest::Digest;
 
 use std::cmp::min;
 use std::fmt::{Formatter, Error, Debug};
-use std::io::ErrorKind::NotFound;
-use std::io::Read;
+use std::io::{Read, ErrorKind};
 use std::fs::File;
 use std::path::PathBuf;
 use std::iter::repeat;
-
-use types::PieceIndex;
 
 pub struct FileInfo {
     pub path: PathBuf,
@@ -121,7 +119,7 @@ impl TorrentInfo {
         let mut buf: Vec<u8> = repeat(0u8).take(self.piece_length as usize).collect();
         let first_handle = match File::open(&self.files[0].path) {
             Ok(handle) => Some(handle),
-            Err(ref e) if e.kind() == NotFound => None,
+            Err(ref e) if e.kind() == ErrorKind::NotFound => None,
             Err(e) => panic!("IoError when trying to check pieces: {:?}", e.kind())
         };
         let mut cur_file_index = 0;
@@ -140,7 +138,7 @@ impl TorrentInfo {
                     cur_file_index += 1;
                     cur_file_handle = match File::open(&self.files[0].path) {
                         Ok(handle) => Some(handle),
-                        Err(ref e) if e.kind() == NotFound => None,
+                        Err(ref e) if e.kind() == ErrorKind::NotFound => None,
                         Err(e)=>
                             panic!("IoError when trying to check pieces: {:?}", e.kind())
                     }
@@ -254,7 +252,7 @@ impl <'a> FileSectionIter<'a> {
 impl <'a>FromBValue<'a> for FileInfo {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<FileInfo> {
         match bvalue {
-            BDict(mut dict, _) => {
+            BValue::BDict(mut dict, _) => {
                 match (dict.remove(&b"path"[..]),
                        dict.remove(&b"length"[..])) {
                     (Some(bv_path), Some(bv_length)) => {
@@ -273,7 +271,7 @@ impl <'a>FromBValue<'a> for FileInfo {
 impl <'a> FromBValue<'a> for PathBuf {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<PathBuf> {
         match bvalue {
-            BList(l) => {
+            BValue::BList(l) => {
                 let mut path = PathBuf::new();
                 for segment in l {
                     let seg: &str = try!(FromBValue::from_bvalue(segment));
@@ -289,7 +287,7 @@ impl <'a> FromBValue<'a> for PathBuf {
 impl <'a> FromBValue<'a> for TorrentInfo {
     fn from_bvalue(info_dict: BValue<'a>) -> ConversionResult<TorrentInfo> {
         match info_dict {
-            BDict(mut dict, dict_str) => {
+            BValue::BDict(mut dict, dict_str) => {
                 match (dict.remove(&b"piece length"[..]),
                         dict.remove(&b"pieces"[..]),
                         dict.remove(&b"name"[..])) {

@@ -5,10 +5,8 @@ use hyper::client::request::Request;
 use hyper::method::Method;
 use rand::random;
 
-use bencode::{BValue, FromBValue, ConversionResult};
-use bencode::BValue::BDict;
+use bencode::{self, BValue, FromBValue, ConversionResult};
 use bencode::ConversionError::OtherError;
-use bencode;
 use peer::PeerInfo;
 
 use std::io::{Read, Write, Cursor};
@@ -100,7 +98,7 @@ fn make_http_request(mut url: Url, request: &TrackerRequest)
             resp.read_to_end(&mut data).unwrap();
             let bvalue = bencode::parse_bvalue(&data).unwrap(); // TODO
             match bvalue {
-                BDict(mut d, _) => {
+                BValue::BDict(mut d, _) => {
                     if let Some(f) =
                             d.remove(&b"failure reason"[..]) {
                         let err_str: &str = FromBValue::from_bvalue(f).unwrap();

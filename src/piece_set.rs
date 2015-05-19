@@ -1,10 +1,10 @@
-use rand;
-use rand::Rng;
 use std::collections::BitVec;
 use std::ops::Index;
 
 use torrent_info::TorrentInfo;
 use types::PieceIndex;
+
+use rand::{thread_rng, Rng};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PieceSet {
@@ -66,7 +66,7 @@ impl PieceSet {
         if new_pieces == 0 {
             return None;
         }
-        let randint = rand::thread_rng().gen_range(0, new_pieces);
+        let randint = thread_rng().gen_range(0, new_pieces);
         let n = self.bitv.iter().zip(&other.bitv).enumerate()
                     .filter(|&(_, t)| t.0 && t.1).nth(randint).unwrap().0;
         let picked_index = PieceIndex(n as u32);

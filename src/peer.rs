@@ -1,5 +1,4 @@
 use bencode::{BValue, FromBValue, ConversionResult};
-use bencode::BValue::BString;
 use bencode::ConversionError::{WrongBValueConstructor, OtherError};
 
 use std::net::{SocketAddrV4, Ipv4Addr};
@@ -12,7 +11,7 @@ impl <'a>FromBValue<'a> for Vec<PeerInfo> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<PeerInfo>> {
         match bvalue {
             // compact representation
-            BString(bytes) => {
+            BValue::BString(bytes) => {
                 if bytes.len() % 6 != 0 { return Err(OtherError) } // TODO
                 let mut peers = Vec::with_capacity(bytes.len() / 6);
                 for chunk in bytes.chunks(6) {

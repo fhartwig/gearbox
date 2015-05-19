@@ -1,5 +1,5 @@
-use mio::buf::{RingBuf};
-use mio;
+use mio::buf::RingBuf;
+use mio::Token;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PieceIndex(pub u32);
@@ -29,7 +29,7 @@ pub struct BlockFromDisk {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlockReceiver {
     pub id: ConnectionId,
-    pub token: mio::Token
+    pub token: Token
 }
 
 #[derive(Clone, Copy, Debug)]

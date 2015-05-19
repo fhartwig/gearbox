@@ -1,21 +1,18 @@
-use std::io;
+use std::{io, mem};
 use std::collections::{VecDeque, HashMap, VecMap};
 use std::cmp::min;
-use std::mem;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::sync::mpsc::Sender;
 
 use torrent_info::TorrentInfo;
-use tracker;
-use tracker::{Tracker, Event, TrackerRequest};
+use tracker::{self, Tracker, Event, TrackerRequest};
 use peer::PeerInfo;
 use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
     PieceReaderMessage, ConnectionId, BlockReceiver, Stats};
 use piece_set::PieceSet;
 use ui::UI;
 
-use mio;
-use mio::{Token, PollOpt, Interest, TryRead, TryWrite};
+use mio::{self, Token, PollOpt, Interest, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::buf::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
 use mio::util::Slab;
