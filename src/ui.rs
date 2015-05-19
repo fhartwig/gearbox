@@ -5,8 +5,8 @@ use std::fmt::Write;
 use peer_protocol::CommonInfo;
 use types::Stats;
 
-use rustbox::{RustBox, Event, Color, Key};
-use rustbox;
+use rustbox::{self, RustBox, Event, Color, Key};
+use time::Duration;
 
 pub struct UI {
     rustbox: RustBox,
@@ -48,22 +48,22 @@ impl UI {
         self.rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Remaining: {}", stats.remaining).unwrap();
+        write!(&mut self.tmp_buf, "Remaining: {:<12} B", stats.remaining).unwrap();
         self.rustbox.print(1, 4, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Downloading at: {} B/s", down_avg).unwrap();
+        write!(&mut self.tmp_buf, "Downloading at: {:<10} B/s", down_avg).unwrap();
         self.rustbox.print(1, 5, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Uploading at: {} B/s", up_avg).unwrap();
+        write!(&mut self.tmp_buf, "Uploading at: {:<10} B/s", up_avg).unwrap();
         self.rustbox.print(1, 6, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
 
         self.rustbox.present();
 
         loop {
-            match self.rustbox.peek_event(0, false) {
+            match self.rustbox.peek_event(Duration::seconds(0), false) {
                 Ok(Event::NoEvent) => return false,
                 Ok(Event::KeyEvent(key)) => {
                     match key {

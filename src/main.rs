@@ -11,6 +11,7 @@ extern crate log;
 extern crate env_logger;
 extern crate byteorder;
 extern crate rustbox;
+extern crate time;
 
 #[cfg(test)]
 extern crate nix;

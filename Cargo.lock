@@ -10,7 +10,8 @@ dependencies = [
  "nix 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (git+https://github.com/DaGenix/rust-crypto)",
- "rustbox 0.6.0 (git+https://github.com/gchp/rustbox.git)",
+ "rustbox 0.6.1 (git+https://github.com/gchp/rustbox.git)",
+ "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -46,14 +47,6 @@ dependencies = [
  "rustc-serialize 0.3.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
  "url 0.2.31 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "enum_primitive"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "num 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -251,14 +244,14 @@ dependencies = [
 
 [[package]]
 name = "rustbox"
-version = "0.6.0"
-source = "git+https://github.com/gchp/rustbox.git#f14583eacc52b31cc91f265b72c5f7c68a4d2480"
+version = "0.6.1"
+source = "git+https://github.com/gchp/rustbox.git#b87c488e3e612d522054aeb078a3e5e4c43c0334"
 dependencies = [
  "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "enum_primitive 0.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "gag 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "num 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "termbox-sys 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
