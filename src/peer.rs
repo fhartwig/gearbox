@@ -4,14 +4,14 @@ use bencode::ConversionError::{WrongBValueConstructor, OtherError};
 use std::net::{SocketAddrV4, Ipv4Addr};
 
 #[derive(Debug)]
-pub struct PeerInfo {pub addr: SocketAddrV4}
+pub struct PeerInfo { pub addr: SocketAddrV4 }
 
 // TODO: handle non-compact representation
 impl <'a>FromBValue<'a> for Vec<PeerInfo> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<PeerInfo>> {
         match bvalue {
             // compact representation
-            BValue::BString(bytes) => {
+            BValue::String(bytes) => {
                 if bytes.len() % 6 != 0 { return Err(OtherError) } // TODO
                 let mut peers = Vec::with_capacity(bytes.len() / 6);
                 for chunk in bytes.chunks(6) {

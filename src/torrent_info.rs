@@ -252,7 +252,7 @@ impl <'a> FileSectionIter<'a> {
 impl <'a>FromBValue<'a> for FileInfo {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<FileInfo> {
         match bvalue {
-            BValue::BDict(mut dict, _) => {
+            BValue::Dict(mut dict, _) => {
                 match (dict.remove(&b"path"[..]),
                        dict.remove(&b"length"[..])) {
                     (Some(bv_path), Some(bv_length)) => {
@@ -271,7 +271,7 @@ impl <'a>FromBValue<'a> for FileInfo {
 impl <'a> FromBValue<'a> for PathBuf {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<PathBuf> {
         match bvalue {
-            BValue::BList(l) => {
+            BValue::List(l) => {
                 let mut path = PathBuf::new();
                 for segment in l {
                     let seg: &str = try!(FromBValue::from_bvalue(segment));
@@ -287,7 +287,7 @@ impl <'a> FromBValue<'a> for PathBuf {
 impl <'a> FromBValue<'a> for TorrentInfo {
     fn from_bvalue(info_dict: BValue<'a>) -> ConversionResult<TorrentInfo> {
         match info_dict {
-            BValue::BDict(mut dict, dict_str) => {
+            BValue::Dict(mut dict, dict_str) => {
                 match (dict.remove(&b"piece length"[..]),
                         dict.remove(&b"pieces"[..]),
                         dict.remove(&b"name"[..])) {

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::str::from_utf8;
 use std::fmt;
 
-pub use self::BValue::*;
 pub use self::ConversionError::*;
 pub use self::ParseError::*;
 
@@ -135,22 +134,22 @@ impl <'a> Parser<'a> {
         match try!(self.peek()) as char {
             'i' => {
                 let n = try!(self.parse_int());
-                Ok(BInt(n))
+                Ok(BValue::Int(n))
             },
             'l' => {
                 let list = try!(self.parse_list());
-                Ok(BList(list))
+                Ok(BValue::List(list))
             },
             'd' => {
                 let dict_start = self.next_pos;
                 let dict = try!(self.parse_dict());
                 let dict_end = self.next_pos; // one past the end of the dict
                 let dict_str = &self.buf.as_ref()[dict_start..dict_end];
-                Ok(BDict(dict, dict_str))
+                Ok(BValue::Dict(dict, dict_str))
             },
             c if c.is_digit(10) => {
                 let string = try!(self.parse_string());
-                Ok(BString(string))
+                Ok(BValue::String(string))
             },
             c => Err(UnexpectedToken(c as u8))
         }
@@ -181,17 +180,17 @@ impl fmt::Display for ParseError {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum BValue<'a> {
-    BInt(isize), // TODO: should be i64 (technically, it's arbitrary-precision,
+    Int(isize), // TODO: should be i64 (technically, it's arbitrary-precision,
         // but I can't think of a use case for anything larger than i64
-    BString(&'a [u8]),
-    BList(Vec<BValue<'a>>),
-    BDict(HashMap<&'a [u8], BValue<'a>>, &'a [u8])
+    String(&'a [u8]),
+    List(Vec<BValue<'a>>),
+    Dict(HashMap<&'a [u8], BValue<'a>>, &'a [u8])
 }
 
 impl <'a> BValue<'a> {
     pub fn get(&mut self, key: &'a [u8]) -> ConversionResult<BValue<'a>> {
         match *self {
-            BDict(ref mut d, _) => {
+            BValue::Dict(ref mut d, _) => {
                 match d.remove(&key) {
                     Some(bv) => Ok(bv),
                     None => Err(KeyDoesNotExist)
@@ -231,7 +230,7 @@ pub trait FromBValue<'a> {
 impl <'a>FromBValue<'a> for &'a [u8] {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<&'a [u8]>{
         match bvalue {
-            BString(s) => Ok(s),
+            BValue::String(s) => Ok(s),
             _ => Err(WrongBValueConstructor)
         }
     }
@@ -240,7 +239,7 @@ impl <'a>FromBValue<'a> for &'a [u8] {
 impl <'a>FromBValue<'a> for Vec<u8> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<u8>>{
         match bvalue {
-            BString(s) => {
+            BValue::String(s) => {
                 let mut v = Vec::with_capacity(s.len());
                 v.push_all(s);
                 Ok(v)
@@ -253,7 +252,7 @@ impl <'a>FromBValue<'a> for Vec<u8> {
 impl <'a> FromBValue<'a> for &'a str {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<&'a str> {
         match bvalue {
-            BString(bytes) => match from_utf8(bytes) {
+            BValue::String(bytes) => match from_utf8(bytes) {
                 Ok(s) => Ok(s),
                 Err(_) => Err(BadEncoding)
             },
@@ -265,7 +264,7 @@ impl <'a> FromBValue<'a> for &'a str {
 impl <'a>FromBValue<'a> for isize {
     fn from_bvalue(bvalue: BValue) -> ConversionResult<isize> {
         match bvalue {
-            BInt(n) => Ok(n),
+            BValue::Int(n) => Ok(n),
             _ => Err(WrongBValueConstructor)
         }
     }
@@ -274,7 +273,7 @@ impl <'a>FromBValue<'a> for isize {
 impl <'a>FromBValue<'a> for usize {
     fn from_bvalue(bvalue: BValue) -> ConversionResult<usize> {
         match bvalue {
-            BInt(n) if n >= 0 => Ok(n as usize),
+            BValue::Int(n) if n >= 0 => Ok(n as usize),
             _ => Err(WrongBValueConstructor) // TODO: better error
         }
     }
@@ -283,7 +282,7 @@ impl <'a>FromBValue<'a> for usize {
 impl <'a>FromBValue<'a> for u64 {
     fn from_bvalue(bvalue: BValue) -> ConversionResult<u64> {
         match bvalue {
-            BInt(n) if n >= 0 => Ok(n as u64),
+            BValue::Int(n) if n >= 0 => Ok(n as u64),
             _ => Err(WrongBValueConstructor)
         }
     }
@@ -292,7 +291,7 @@ impl <'a>FromBValue<'a> for u64 {
 impl <'a> FromBValue<'a> for String {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<String> {
         match bvalue {
-            BString(bytes) => {
+            BValue::String(bytes) => {
                 let mut v = Vec::with_capacity(bytes.len());
                 v.push_all(bytes);
                 match String::from_utf8(v) {
@@ -308,7 +307,7 @@ impl <'a> FromBValue<'a> for String {
 impl <'a, T: FromBValue<'a>> FromBValue<'a> for Vec<T> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<T>> {
         match bvalue {
-            BList(v) => {
+            BValue::List(v) => {
                 // TODO: why does this not work?
                 //Ok(v.into_iter().map(|e| {
                 //    FromBValue::from_bvalue(e).unwrap_or(return Err(()))
@@ -355,7 +354,7 @@ mod tests {
     #[test]
     fn test_int_parsing() {
         let s = b"i123e";
-        assert_eq!(parse_bvalue(s).unwrap(), BInt(123isize));
+        assert_eq!(parse_bvalue(s).unwrap(), BValue::Int(123isize));
     }
 
     #[test]
@@ -363,7 +362,7 @@ mod tests {
         let s = b"l4:spam4:eggse";
         let mut parser = Parser::new(s).unwrap();
         let v = parser.parse_value().unwrap();
-        assert_eq!(v, BList(vec![BString(b"spam"), BString(b"eggs")]));
+        assert_eq!(v, BValue::List(vec![String(b"spam"), String(b"eggs")]));
     }
 
     #[test]
@@ -371,7 +370,8 @@ mod tests {
         let s = b"d3:cow3:moo4:spami3ee";
         let bv = parse_bvalue(s).unwrap();
         assert_eq!(bv, BDict(FromIterator::from_iter(
-            vec![(&b"cow"[..], BString(&b"moo"[..])), (&b"spam"[..], BInt(3))].into_iter()),
+            vec![(&b"cow"[..], BValue::String(&b"moo"[..])),
+                 (&b"spam"[..], BValue::Int(3))].into_iter()),
             s));
     }
 }

@@ -98,7 +98,7 @@ fn make_http_request(mut url: Url, request: &TrackerRequest)
             resp.read_to_end(&mut data).unwrap();
             let bvalue = bencode::parse_bvalue(&data).unwrap(); // TODO
             match bvalue {
-                BValue::BDict(mut d, _) => {
+                BValue::Dict(mut d, _) => {
                     if let Some(f) =
                             d.remove(&b"failure reason"[..]) {
                         let err_str: &str = FromBValue::from_bvalue(f).unwrap();
