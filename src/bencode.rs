@@ -362,14 +362,15 @@ mod tests {
         let s = b"l4:spam4:eggse";
         let mut parser = Parser::new(s).unwrap();
         let v = parser.parse_value().unwrap();
-        assert_eq!(v, BValue::List(vec![String(b"spam"), String(b"eggs")]));
+        assert_eq!(v, BValue::List(vec![BValue::String(b"spam"),
+                                        BValue::String(b"eggs")]));
     }
 
     #[test]
     fn test_dict_parsing() {
         let s = b"d3:cow3:moo4:spami3ee";
         let bv = parse_bvalue(s).unwrap();
-        assert_eq!(bv, BDict(FromIterator::from_iter(
+        assert_eq!(bv, BValue::Dict(FromIterator::from_iter(
             vec![(&b"cow"[..], BValue::String(&b"moo"[..])),
                  (&b"spam"[..], BValue::Int(3))].into_iter()),
             s));

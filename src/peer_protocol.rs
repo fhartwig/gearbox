@@ -1267,7 +1267,7 @@ mod tests {
         let (piece_reader_sender, piece_reader_receiver) = channel();
         let (piece_writer_sender, piece_writer_receiver) = channel();
         let tracker_url = Url::parse("http://localhost:8080/announce").unwrap();
-        let tracker = Tracker::new(tracker_url);
+        let tracker = Tracker::Http(tracker_url);
         let socket_addr = ToSocketAddrs::to_socket_addrs("0.0.0.0:0")
                                         .unwrap().next().unwrap();
         let listener = TcpListener::bind(&socket_addr).unwrap();
