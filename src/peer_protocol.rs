@@ -242,7 +242,7 @@ impl CurrentPieceInfo {
 }
 
 pub struct CommonInfo<'a> {
-    torrent: &'a TorrentInfo,
+    pub torrent: &'a TorrentInfo,
     /// pieces we have successfully downloaded
     our_pieces: PieceSet,
     /// pieces that we don't have and that are not yet being downloaded

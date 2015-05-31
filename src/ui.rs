@@ -37,28 +37,36 @@ impl UI {
                                              down_since_last_tick);
         self.last_stats = stats;
 
-        self.rustbox.print(1, 1, rustbox::RB_BOLD, Color::White, Color::Black,
+        self.rustbox.print(1, 1, rustbox::RB_BOLD, Color::Green, Color::Black,
                       "gearbox!");
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Downloaded: {}", stats.downloaded).unwrap();
+        write!(&mut self.tmp_buf, "Torrent Name: {}",
+               common.torrent.name()).unwrap();
         self.rustbox.print(1, 2, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Uploaded: {}", stats.uploaded).unwrap();
+        write!(&mut self.tmp_buf, "Downloaded: {}", stats.downloaded).unwrap();
         self.rustbox.print(1, 3, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Remaining: {:<12} B", stats.remaining).unwrap();
+        write!(&mut self.tmp_buf, "Uploaded: {}", stats.uploaded).unwrap();
         self.rustbox.print(1, 4, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Downloading at: {:<10} B/s", down_avg).unwrap();
+        write!(&mut self.tmp_buf, "Remaining: {:<12} B", stats.remaining).unwrap();
         self.rustbox.print(1, 5, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
         self.tmp_buf.clear();
-        write!(&mut self.tmp_buf, "Uploading at: {:<10} B/s", up_avg).unwrap();
+        write!(&mut self.tmp_buf, "Downloading at: {:<10} B/s", down_avg).unwrap();
         self.rustbox.print(1, 6, rustbox::RB_BOLD, Color::White, Color::Black,
                       &self.tmp_buf);
+        self.tmp_buf.clear();
+        write!(&mut self.tmp_buf, "Uploading at: {:<10} B/s", up_avg).unwrap();
+        self.rustbox.print(1, 7, rustbox::RB_BOLD, Color::White, Color::Black,
+                      &self.tmp_buf);
+        self.tmp_buf.clear();
+        self.rustbox.print(1, 8, rustbox::RB_BOLD, Color::Red, Color::Black,
+                           "\nPress q to quit");
 
         self.rustbox.present();
 

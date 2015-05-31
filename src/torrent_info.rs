@@ -103,6 +103,10 @@ impl TorrentInfo {
         self.hashes.len() as u32 / 20
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn map_block(&self, piece_index: PieceIndex, offset: u32, length: u32)
                      -> FileSectionIter {
         FileSectionIter::new(piece_index, offset, length, self)
