@@ -63,7 +63,7 @@ impl HandshakingConnection {
             let mut slice_buf = MutSliceBuf::wrap(
                 &mut self.recv_buf[self.bytes_received..
                                    HANDSHAKE_BYTES_LENGTH]);
-            self.conn.read(&mut slice_buf)
+            self.conn.try_read_buf(&mut slice_buf)
         };
         match read_result {
             Ok(Some(bytes_read)) => {
@@ -79,7 +79,7 @@ impl HandshakingConnection {
     /// return Err(()) on IO error
     fn write(&mut self) -> Result<(), ()> {
         debug!("In handshakingConn::write");
-        match self.conn.write(&mut self.send_buf) {
+        match self.conn.try_write_buf(&mut self.send_buf) {
             Ok(None) => Ok(()), // we need to wait before sending more data
             Ok(Some(_written_bytes)) => Ok(()),
             Err(_) => Err(())
@@ -344,7 +344,7 @@ impl PeerConnection {
         
         debug!("Sendbuf remaining: {}, capacity: {}",
                 Buf::remaining(&self.send_buf), self.send_buf.capacity());
-        match self.conn.write(&mut self.send_buf) {
+        match self.conn.try_write_buf(&mut self.send_buf) {
             Ok(None) => self.maybe_writable = false,
             Ok(Some(written_bytes)) => {
                 info!("Wrote {} bytes of messages", written_bytes);
@@ -405,7 +405,7 @@ impl PeerConnection {
     /// a whole message is available or not
     fn read_message(&mut self) -> bool {
         debug!("In PeerConnection::read_message");
-        match self.conn.read(&mut self.recv_buf) {
+        match self.conn.try_read_buf(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
                 info!("Read {} bytes", bytes_read);
                 if Buf::remaining(&self.recv_buf) < 4 {

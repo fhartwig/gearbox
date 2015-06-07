@@ -138,7 +138,7 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.4.0"
-source = "git+https://github.com/carllerche/mio#e753c88d3fb396ed4d54a304e131c1f2aa60160d"
+source = "git+https://github.com/carllerche/mio#7492fcff50b60b609ed64f6f1a1ca72b0add8850"
 dependencies = [
  "bytes 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
