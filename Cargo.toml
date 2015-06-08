@@ -22,6 +22,9 @@ git = "https://github.com/DaGenix/rust-crypto"
 [dependencies.mio]
 git = "https://github.com/carllerche/mio"
 
+[dependencies.nix]
+git = "https://github.com/carllerche/nix-rust"
+
 [dependencies.rustbox]
 git = "https://github.com/gchp/rustbox.git"
 
@@ -30,6 +33,3 @@ debug = false
 
 [profile.test]
 debug = false
-
-[dev-dependencies]
-nix = "*"

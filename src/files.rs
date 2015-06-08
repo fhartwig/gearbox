@@ -1,13 +1,15 @@
 use std::sync::mpsc::{Receiver, RecvError};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Seek, SeekFrom, Write, Read};
+use std::io::{self, Write, Read};
 use std::collections::VecDeque;
 use std::collections::vec_map::{VecMap, Entry};
 use std::mem;
 use std::marker::PhantomData;
+use std::os::unix::io::AsRawFd;
 
 use mio::buf::{Buf, MutBuf, RingBuf};
 use mio::Sender;
+use nix::sys::uio::{pread, pwrite};
 
 use byteorder::{WriteBytesExt, BigEndian};
 
@@ -120,8 +122,9 @@ pub fn file_writer(torrent_info: &TorrentInfo,
             let mut remaining_data = block.bytes();
             for section in sections {
                 let handle = handles.get(section.file_index);
-                handle.seek(SeekFrom::Start(section.offset)).unwrap();
-                handle.write_all(&remaining_data[..section.length as usize]).unwrap();
+                pwrite(handle.as_raw_fd(),
+                       &remaining_data[..section.length as usize],
+                       section.offset as i64).unwrap();
                 remaining_data = &remaining_data[section.length as usize..];
             }
         }
@@ -190,12 +193,11 @@ impl <'a> FileReader<'a> {
         for section in self.torrent.map_block(block_info.piece_index,
                                               block_info.offset,
                                               block_info.length) {
-            let mut handle = self.handles.get(section.file_index);
+            let handle = self.handles.get(section.file_index);
             let buf = &mut data.mut_bytes()
                           [cur_offset_in_piece..
                            cur_offset_in_piece + section.length as usize];
-            handle.seek(SeekFrom::Start(section.offset)).unwrap();
-            handle.read(buf).unwrap();
+            pread(handle.as_raw_fd(), buf, section.offset as i64).unwrap();
             cur_offset_in_piece += section.length as usize;
         }
         MutBuf::advance(&mut data, block_info.length as usize);
