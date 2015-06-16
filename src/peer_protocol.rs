@@ -814,7 +814,7 @@ impl PeerConnection {
             let bytes = our_pieces.to_bytes();
             writer.write_u32::<BigEndian>(1 + bytes.len() as u32).unwrap();
             writer.write_u8(5).unwrap();
-            for byte in bytes.iter() {
+            for byte in &bytes {
                 writer.write_u8(*byte).unwrap();
             }
         }

@@ -110,10 +110,10 @@ impl <'a> HandleCacheTrait for HandleCache<'a, W> {
 pub fn file_writer(torrent_info: &TorrentInfo,
                    chan: Receiver<PieceData>) {
     let mut handles: HandleCache<W> = HandleCache::new(torrent_info);
-    for piece in chan.iter() {
+    for piece in chan {
         // TODO (optimisation): write the whole piece at once (using writev)
         info!("Disk writer chan got a piece!");
-        for (index, block) in piece.blocks.iter() {
+        for (index, block) in &piece.blocks {
             let block_offset = index as u32 * BLOCK_SIZE;
             let sections = torrent_info.map_block(
                 piece.index,

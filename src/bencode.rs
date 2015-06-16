@@ -313,7 +313,7 @@ impl <'a, T: FromBValue<'a>> FromBValue<'a> for Vec<T> {
                 //    FromBValue::from_bvalue(e).unwrap_or(return Err(()))
                 //}).collect())
                 let mut result = Vec::with_capacity(v.len());
-                for e in v.into_iter() {
+                for e in v {
                     result.push(try!(FromBValue::from_bvalue(e)));
                 }
                 Ok(result)

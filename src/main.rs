@@ -46,7 +46,7 @@ fn main() {
     let torrent_info_ref = &torrent_info;
     println!("Info: {:?}", torrent_info);
     let mut peer_id = [0u8;20];
-    for b in peer_id.iter_mut() {
+    for b in &mut peer_id {
         *b = rand::random();
     }
     let (disk_reader_request_sender, disk_reader_request_receiver) = channel();
