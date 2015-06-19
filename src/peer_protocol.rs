@@ -1290,10 +1290,10 @@ mod tests {
             super::HandshakingConnection::new(nb_conn, &torrent, &our_id);
         assert!(!hs_conn.handshake_finished());
         let mut peer_handshake = Vec::new();
-        peer_handshake.push_all(
+        peer_handshake.extend(
             b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
-        peer_handshake.push_all(torrent.info_hash());
-        peer_handshake.push_all(&peer_id);
+        peer_handshake.extend(torrent.info_hash());
+        peer_handshake.extend(&peer_id);
         peer_conn.write_all(&peer_handshake);
 
         hs_conn.read();
@@ -1328,9 +1328,9 @@ mod tests {
         let mut msg = Vec::new();
         let msg_length = 1 + bit_vec.len();
 
-        msg.push_all(&[0;4]); // placeholder for message length
+        msg.extend(&[0;4]); // placeholder for message length
         msg.push(5); // header byte for bitfield
-        msg.push_all(&bit_vec[..]);
+        msg.extend(&bit_vec[..]);
         {
             let mut writer = &mut msg[..];
             writer.write_u32::<BigEndian>(msg_length as u32);

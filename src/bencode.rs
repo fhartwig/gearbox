@@ -239,11 +239,7 @@ impl <'a>FromBValue<'a> for &'a [u8] {
 impl <'a>FromBValue<'a> for Vec<u8> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<u8>>{
         match bvalue {
-            BValue::String(s) => {
-                let mut v = Vec::with_capacity(s.len());
-                v.push_all(s);
-                Ok(v)
-            }
+            BValue::String(s) => Ok(From::from(s)),
             _ => Err(WrongBValueConstructor)
         }
     }
@@ -292,9 +288,7 @@ impl <'a> FromBValue<'a> for String {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<String> {
         match bvalue {
             BValue::String(bytes) => {
-                let mut v = Vec::with_capacity(bytes.len());
-                v.push_all(bytes);
-                match String::from_utf8(v) {
+                match String::from_utf8(From::from(bytes)) {
                     Ok(s) => Ok(s),
                     Err(_) => Err(BadEncoding)
                 }

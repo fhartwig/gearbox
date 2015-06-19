@@ -1,4 +1,4 @@
-#![feature(collections, core, scoped)]
+#![feature(iter_arith, bitvec, vecmap, drain, scoped)]
 #![cfg_attr(test, feature(from_raw_os))]
 
 extern crate url;
@@ -12,9 +12,6 @@ extern crate env_logger;
 extern crate byteorder;
 extern crate rustbox;
 extern crate time;
-extern crate nix;
-
-#[cfg(test)]
 extern crate nix;
 
 use std::fs::File;
