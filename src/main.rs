@@ -1,5 +1,4 @@
-#![feature(iter_arith, bitvec, vecmap, drain, scoped)]
-#![cfg_attr(test, feature(from_raw_os))]
+#![feature(iter_arith, bitvec, vecmap, drain, result_expect, scoped)]
 
 extern crate url;
 extern crate hyper;

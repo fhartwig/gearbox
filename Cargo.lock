@@ -7,7 +7,7 @@ dependencies = [
  "hyper 0.3.14 (git+https://github.com/hyperium/hyper)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.4.0 (git+https://github.com/carllerche/mio)",
- "nix 0.3.6 (git+https://github.com/carllerche/nix-rust)",
+ "nix 0.3.7 (git+https://github.com/carllerche/nix-rust)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-crypto 0.2.31 (git+https://github.com/DaGenix/rust-crypto)",
  "rustbox 0.6.1 (git+https://github.com/gchp/rustbox.git)",
@@ -138,19 +138,20 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.4.0"
-source = "git+https://github.com/carllerche/mio#7492fcff50b60b609ed64f6f1a1ca72b0add8850"
+source = "git+https://github.com/carllerche/mio#57d41bb6a52c83a2d2614f3a278ece75fd723020"
 dependencies = [
  "bytes 0.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "clock_ticks 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix 0.3.6 (git+https://github.com/carllerche/nix-rust)",
+ "nix 0.3.7 (git+https://github.com/carllerche/nix-rust)",
+ "slab 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.1.17 (git+https://github.com/retep998/winapi-rs)",
 ]
 
 [[package]]
 name = "nix"
-version = "0.3.6"
-source = "git+https://github.com/carllerche/nix-rust#1d9bbacdfbdf21e8af25a19a91f746bed1087b5e"
+version = "0.3.7"
+source = "git+https://github.com/carllerche/nix-rust#d9808975608e7818be2d564357469dab0a31e1d2"
 dependencies = [
  "bitflags 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -248,6 +249,11 @@ dependencies = [
 [[package]]
 name = "rustc-serialize"
 version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "slab"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]

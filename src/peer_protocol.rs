@@ -1191,18 +1191,14 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::PeerMsg;
-    use std::net::SocketAddr;
     use std::net::TcpStream as StdTcpStream;
     use std::io::{Read, Write};
     use std::os::unix::io::FromRawFd;
-    use std::sync::mpsc::{channel, Sender, Receiver};
-    use std::str::FromStr;
+    use std::sync::mpsc::{channel, Receiver};
 
     use piece_set::PieceSet;
     use torrent_info::{TorrentInfo, FileInfo};
     use types::*;
-    use mio::{Token, FromFd};
     use mio::tcp::{TcpStream, TcpListener};
     use mio;
 
@@ -1211,13 +1207,11 @@ mod tests {
         use nix::sys::socket::{SockType, AddressFamily, SockFlag, socketpair};
 
         let (our_sock, peer_sock) =
-            match socketpair(AddressFamily::Unix, SockType::Stream,
-                             0, SockFlag::empty()) {
-                Ok(tup) => tup,
-                Err(_) => panic!("oh noes, socketpair doesn't work")
-            };
+            socketpair(AddressFamily::Unix, SockType::Stream, 0,
+                       SockFlag::empty())
+                      .expect("Oh noes, socketpair doesn't work");
 
-        let our_stream = unsafe {FromFd::from_fd(our_sock)};
+        let our_stream = unsafe {mio::unix::FromRawFd::from_raw_fd(our_sock)};
         let peer_stream = unsafe {FromRawFd::from_raw_fd(peer_sock)};
 
         (our_stream, peer_stream)
@@ -1282,10 +1276,9 @@ mod tests {
     #[test]
     fn test_handshake() {
         let torrent = dummy_torrent();
-        let (our_conn, mut peer_conn) = get_socket_pair();
+        let (nb_conn, mut peer_conn) = get_socket_pair();
         let our_id = [42;20];
         let peer_id = [23;20];
-        let mut nb_conn = our_conn;
         let mut hs_conn =
             super::HandshakingConnection::new(nb_conn, &torrent, &our_id);
         assert!(!hs_conn.handshake_finished());
@@ -1294,9 +1287,9 @@ mod tests {
             b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
         peer_handshake.extend(torrent.info_hash());
         peer_handshake.extend(&peer_id);
-        peer_conn.write_all(&peer_handshake);
+        peer_conn.write_all(&peer_handshake).unwrap();
 
-        hs_conn.read();
+        hs_conn.read().expect("error reading from hs_conn");
         assert!(!hs_conn.handshake_finished());
         hs_conn.write().unwrap();
         assert!(hs_conn.handshake_finished());
@@ -1312,7 +1305,6 @@ mod tests {
     #[test]
     fn test_bitfield_handling() {
         use byteorder::{WriteBytesExt, BigEndian};
-        use super::PeerMsg;
 
         let torrent = dummy_torrent();
         let (mut peer_conn, mut other_end) = mk_peer_conn(&torrent);
@@ -1324,7 +1316,6 @@ mod tests {
         peers_piece_set.set_true(PieceIndex(42));
 
         let bit_vec = peers_piece_set.to_bytes();
-        let mut n_buf = [0u8;4];
         let mut msg = Vec::new();
         let msg_length = 1 + bit_vec.len();
 
@@ -1333,9 +1324,9 @@ mod tests {
         msg.extend(&bit_vec[..]);
         {
             let mut writer = &mut msg[..];
-            writer.write_u32::<BigEndian>(msg_length as u32);
+            writer.write_u32::<BigEndian>(msg_length as u32).unwrap();
         }
-        other_end.write_all(&msg);
+        other_end.write_all(&msg).unwrap();
         peer_conn.read(&mut common);
         assert!(!peer_conn.peers_pieces[PieceIndex(2)]);
         assert!(!peer_conn.peers_pieces[PieceIndex(4)]);
@@ -1364,9 +1355,9 @@ mod tests {
         let mut buf = RingBuf::new(super::SEND_BUF_SIZE);
         {
             let msg = PeerMsg::Interested;
-            msg.serialise(&mut buf);
+            msg.serialise(&mut buf).unwrap();
             let msg = PeerMsg::Have(PieceIndex(0));
-            msg.serialise(&mut buf);
+            msg.serialise(&mut buf).unwrap();
         }
         let written = Buf::bytes(&buf);
         assert_eq!(&written[..5], [0, 0, 0, 1, 2]);
@@ -1381,16 +1372,16 @@ mod tests {
         let (mut peer_conn, mut other_end) = mk_peer_conn(&torrent);
         let (mut common, _, _) = mk_common_info(&torrent);
         let mut outgoing_buf = Vec::new();
-        PeerMsg::Have(PieceIndex(23)).serialise(&mut outgoing_buf);
-        other_end.write_all(&outgoing_buf);
+        PeerMsg::Have(PieceIndex(23)).serialise(&mut outgoing_buf).unwrap();
+        other_end.write_all(&outgoing_buf).unwrap();
         peer_conn.read(&mut common);
         assert!(peer_conn.peers_pieces[PieceIndex(23)]);
         peer_conn.peers_pieces.set_false(PieceIndex(23));
 
         outgoing_buf.clear();
-        PeerMsg::Interested.serialise(&mut outgoing_buf);
-        PeerMsg::Have(PieceIndex(42)).serialise(&mut outgoing_buf);
-        other_end.write(&outgoing_buf);
+        PeerMsg::Interested.serialise(&mut outgoing_buf).unwrap();
+        PeerMsg::Have(PieceIndex(42)).serialise(&mut outgoing_buf).unwrap();
+        other_end.write(&outgoing_buf).unwrap();
         peer_conn.read(&mut common);
         // make sure the first message hasn't been handled twice
         assert!(!peer_conn.peers_pieces[PieceIndex(23)]);
