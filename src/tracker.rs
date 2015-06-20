@@ -7,7 +7,7 @@ use rand::random;
 
 use bencode::{self, BValue, FromBValue, ConversionResult};
 use bencode::ConversionError::OtherError;
-use peer::PeerInfo;
+use peer::{PeerInfo, PeerInfoList};
 
 use std::io::{Read, Write, Cursor};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr, ToSocketAddrs, UdpSocket};
@@ -106,7 +106,11 @@ fn make_http_request(mut url: Url, request: &TrackerRequest)
                         return Err(())
                     }
                     match d.remove(&b"peers"[..]) {
-                        Some(peers) => Ok(FromBValue::from_bvalue(peers).unwrap()),
+                        Some(peers) => {
+                            let peer_list: PeerInfoList =
+                                FromBValue::from_bvalue(peers).unwrap();
+                            Ok(peer_list.peers)
+                        },
                         _ => panic!("could not parse peers")
                     }
                 }

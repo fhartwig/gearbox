@@ -2,7 +2,7 @@
 
 Gearbox is a simple command-line bittorrent client written in Rust. It is
 currently very much a work-in-progress and I wouldn't recommend actually using
-it. It may have all sorts of horrible bugs that format you hard drive or
+it. It may have all sorts of horrible bugs that format your hard drive or
 frighten your cat. That being said:
 
 ## Platforms

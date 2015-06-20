@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::from_utf8;
+use std::net::Ipv4Addr;
 use std::fmt;
 
 pub use self::ConversionError::*;
@@ -284,6 +285,16 @@ impl <'a>FromBValue<'a> for u64 {
     }
 }
 
+impl <'a>FromBValue<'a> for u16 {
+    fn from_bvalue(bvalue: BValue) -> ConversionResult<u16> {
+        match bvalue {
+            BValue::Int(n) if n >= 0 && n <= ::std::u16::MAX as isize =>
+                Ok(n as u16),
+            _ => Err(WrongBValueConstructor)
+        }
+    }
+}
+
 impl <'a> FromBValue<'a> for String {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<String> {
         match bvalue {
@@ -332,6 +343,18 @@ impl <'a, T: FromBValue<'a>> FromBValue<'a> for HashMap<&'a [u8], T> {
         }
     }
 }*/
+
+impl <'a> FromBValue<'a> for Ipv4Addr {
+    fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Ipv4Addr> {
+        use std::str::FromStr;
+
+        let s = try!(FromBValue::from_bvalue(bvalue));
+        match FromStr::from_str(s) {
+            Ok(ip) => Ok(ip),
+            Err(_) => Err(ConversionError::OtherError) // TODO
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
