@@ -24,5 +24,3 @@ executable.
 Just run
 
     path/to/gearbox path/to/torrent_file.torrent
-
-to start the program and use `Ctrl+c` to terminate it.
