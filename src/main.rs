@@ -1,4 +1,4 @@
-#![feature(iter_arith, bitvec, vecmap, drain, result_expect, scoped)]
+#![feature(iter_arith, bitvec, vecmap, drain, result_expect)]
 
 extern crate url;
 extern crate hyper;
@@ -17,6 +17,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::io::Read;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 
 use peer_protocol::run_event_loop;
 use tracker::Tracker;
@@ -39,7 +40,6 @@ fn main() {
     File::open(&path).unwrap().read_to_end(&mut data_vec).unwrap();
     let data = data_vec.into_boxed_slice();
     let (tracker, torrent_info) = parse_torrent_file(data).unwrap();
-    let torrent_info_ref = &torrent_info;
     println!("Info: {:?}", torrent_info);
     let mut peer_id = [0u8;20];
     for b in &mut peer_id {
@@ -47,23 +47,28 @@ fn main() {
     }
     let (disk_reader_request_sender, disk_reader_request_receiver) = channel();
     let (disk_writer_sender, disk_writer_receiver) = channel();
-    let writer_guard = ::std::thread::scoped(
-        move || files::file_writer(torrent_info_ref, disk_writer_receiver)
+
+    let torrent_info_arc = Arc::new(torrent_info);
+    let torrent_info_arc_clone = torrent_info_arc.clone();
+    let writer_guard = ::std::thread::spawn(
+        move || files::file_writer(&torrent_info_arc_clone,
+                                   disk_writer_receiver)
     );
 
     let event_loop = mio::EventLoop::new().ok()
             .expect("Error opening event loop");
     let block_from_disk_sender = event_loop.channel();
-    let reader_guard = ::std::thread::scoped(
-        move || files::run_file_reader(torrent_info_ref,
+    let torrent_info_arc_clone = torrent_info_arc.clone();
+    let reader_guard = ::std::thread::spawn(
+        move || files::run_file_reader(&torrent_info_arc_clone,
                                    disk_reader_request_receiver,
                                    block_from_disk_sender)
     );
 
-    run_event_loop(event_loop, &torrent_info, disk_writer_sender,
+    run_event_loop(event_loop, &torrent_info_arc, disk_writer_sender,
                    disk_reader_request_sender, &peer_id, tracker);
-    reader_guard.join();
-    writer_guard.join();
+    reader_guard.join().expect("reader thread panicked");
+    writer_guard.join().expect("writer thread panicked");
 }
 
 // TODO: where should this live?
