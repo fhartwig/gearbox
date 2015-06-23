@@ -19,14 +19,14 @@ impl <'a>FromBValue<'a> for PeerInfoList {
                 let mut peers = Vec::with_capacity(bytes.len() / 6);
                 for chunk in bytes.chunks(6) {
                     peers.push(PeerInfo{addr: SocketAddrV4::new(
-                            Ipv4Addr::new(chunk[0], chunk[1], chunk[2], chunk[3]),
-                            (chunk[4] as u16) << 8 | chunk[5] as u16
-                    )});
+                        Ipv4Addr::new(chunk[0], chunk[1], chunk[2], chunk[3]),
+                        (chunk[4] as u16) << 8 | chunk[5] as u16)
+                    });
                 }
                 peers
             },
             // bencoded dict list representation
-            l@BValue::List(_) => try!(FromBValue::from_bvalue(l),
+            l@BValue::List(_) => try!(FromBValue::from_bvalue(l)),
             _ => return Err(ConversionError::WrongBValueConstructor)
         };
         Ok(PeerInfoList { peers: peers })

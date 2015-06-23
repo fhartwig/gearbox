@@ -513,7 +513,7 @@ impl PeerConnection {
             }
         );
 
-        for _ in (0..3) {
+        for _ in 0..3 {
             let next_block = self.currently_downloading_piece.as_mut().unwrap()
                                  .next_block();
             match next_block {
