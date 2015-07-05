@@ -1200,7 +1200,6 @@ mod tests {
     use torrent_info::{TorrentInfo, FileInfo};
     use types::*;
     use mio::tcp::{TcpStream, TcpListener};
-    use mio;
 
     // TODO: proper error handling, although it's not that important for tests
     fn get_socket_pair() -> (TcpStream, StdTcpStream) {
@@ -1211,8 +1210,8 @@ mod tests {
                        SockFlag::empty())
                       .expect("Oh noes, socketpair doesn't work");
 
-        let our_stream = unsafe {mio::unix::FromRawFd::from_raw_fd(our_sock)};
-        let peer_stream = unsafe {FromRawFd::from_raw_fd(peer_sock)};
+        let our_stream = unsafe { FromRawFd::from_raw_fd(our_sock) };
+        let peer_stream = unsafe { FromRawFd::from_raw_fd(peer_sock) };
 
         (our_stream, peer_stream)
     }
