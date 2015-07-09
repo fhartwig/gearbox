@@ -11,6 +11,7 @@ env_logger = "*"
 rand = "*"
 byteorder = "*"
 time = "*"
+bit-vec = "*"
 
 [dependencies.hyper]
 git = "https://github.com/hyperium/hyper"

@@ -1,4 +1,4 @@
-use std::collections::BitVec;
+use bit_vec::BitVec;
 use std::ops::Index;
 
 use torrent_info::TorrentInfo;
