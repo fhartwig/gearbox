@@ -191,12 +191,7 @@ pub enum BValue<'a> {
 impl <'a> BValue<'a> {
     pub fn get(&mut self, key: &'a [u8]) -> ConversionResult<BValue<'a>> {
         match *self {
-            BValue::Dict(ref mut d, _) => {
-                match d.remove(&key) {
-                    Some(bv) => Ok(bv),
-                    None => Err(KeyDoesNotExist)
-                }
-            }
+            BValue::Dict(ref mut d, _) => d.remove(&key).ok_or(KeyDoesNotExist),
             _ => Err(WrongBValueConstructor)
         }
     }
@@ -313,10 +308,6 @@ impl <'a, T: FromBValue<'a>> FromBValue<'a> for Vec<T> {
     fn from_bvalue(bvalue: BValue<'a>) -> ConversionResult<Vec<T>> {
         match bvalue {
             BValue::List(v) => {
-                // TODO: why does this not work?
-                //Ok(v.into_iter().map(|e| {
-                //    FromBValue::from_bvalue(e).unwrap_or(return Err(()))
-                //}).collect())
                 let mut result = Vec::with_capacity(v.len());
                 for e in v {
                     result.push(try!(FromBValue::from_bvalue(e)));

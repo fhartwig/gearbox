@@ -317,10 +317,8 @@ impl <'a> FromBValue<'a> for TorrentInfo {
                             try!(FromBValue::from_bvalue(bv_piece_len));
                         let piece_len = piece_len_usize as u32;
                         // TODO: make error handling more sensible
-                        match TorrentInfo::new(name, piece_len, hashes, files, dict_str) {
-                            Some(ti) => Ok(ti),
-                            None => Err(OtherError)
-                        }
+                        TorrentInfo::new(name, piece_len, hashes, files,
+                                         dict_str).ok_or((OtherError))
                     },
                     _ => Err(KeyDoesNotExist)
                 }
