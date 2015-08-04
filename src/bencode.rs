@@ -157,11 +157,6 @@ impl <'a> Parser<'a> {
     }
 }
 
-pub fn parse_bvalue<'a>(input: &'a [u8]) -> ParseResult<BValue<'a>> {
-    let mut parser = try!(Parser::new(input));
-    parser.parse_value()
-}
-
 #[derive(Debug)]
 enum ParseError {
     EOF,
@@ -194,6 +189,11 @@ impl <'a> BValue<'a> {
             BValue::Dict(ref mut d, _) => d.remove(&key).ok_or(KeyDoesNotExist),
             _ => Err(WrongBValueConstructor)
         }
+    }
+
+    pub fn parse<'b>(input: &'b [u8]) -> ParseResult<BValue<'b>> {
+        let mut parser = try!(Parser::new(input));
+        parser.parse_value()
     }
 }
 

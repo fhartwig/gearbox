@@ -5,7 +5,7 @@ use hyper::client::request::Request;
 use hyper::method::Method;
 use rand::random;
 
-use bencode::{self, BValue, FromBValue, ConversionResult};
+use bencode::{BValue, FromBValue, ConversionResult};
 use bencode::ConversionError::OtherError;
 use peer::{PeerInfo, PeerInfoList};
 
@@ -96,7 +96,7 @@ fn make_http_request(mut url: Url, request: &TrackerRequest)
         Ok(mut resp) => {
             let mut data = Vec::new();
             resp.read_to_end(&mut data).unwrap();
-            let bvalue = bencode::parse_bvalue(&data).unwrap(); // TODO
+            let bvalue = BValue::parse(&data).unwrap(); // TODO
             match bvalue {
                 BValue::Dict(mut d, _) => {
                     if let Some(f) =

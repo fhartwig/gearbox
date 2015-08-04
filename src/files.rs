@@ -2,7 +2,6 @@ use std::sync::mpsc::{Receiver, RecvError};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write, Read};
 use std::collections::VecDeque;
-use std::collections::vec_map::{VecMap, Entry};
 use std::mem;
 use std::marker::PhantomData;
 use std::os::unix::io::AsRawFd;
@@ -12,6 +11,7 @@ use mio::Sender;
 use nix::sys::uio::{pread, pwrite};
 
 use byteorder::{WriteBytesExt, BigEndian};
+use vec_map::{VecMap, Entry};
 
 use torrent_info::TorrentInfo;
 use peer_protocol::{PieceData, BLOCK_SIZE, SEND_BUF_SIZE};
