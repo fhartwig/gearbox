@@ -1,5 +1,5 @@
 use std::{io, mem};
-use std::collections::{VecDeque, HashMap, VecMap};
+use std::collections::{VecDeque, HashMap};
 use std::cmp::min;
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::sync::mpsc::Sender;
@@ -16,6 +16,8 @@ use mio::{self, Token, PollOpt, Interest, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::buf::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
 use mio::util::Slab;
+
+use vec_map::VecMap;
 
 use crypto::sha1::Sha1;
 use crypto::digest::Digest;
@@ -405,6 +407,8 @@ impl PeerConnection {
     /// a whole message is available or not
     fn read_message(&mut self) -> bool {
         debug!("In PeerConnection::read_message");
+        // FIXME: apparently, on some platforms read() will return
+        // 0 (repeatedly) when the connection has been closed
         match self.conn.try_read_buf(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
                 info!("Read {} bytes", bytes_read);
@@ -1046,8 +1050,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                 }
                 if hint.is_error() || hint.is_hup() {
                     info!("closing connection {:?}", token);
-                    let c = self.conn_nursery.remove(token).expect("no such token");
-                    event_loop.deregister(&c.conn).ok().expect("error deregistering");
+                    self.conn_nursery.remove(token).expect("no such token");
                 }
                 else if hint.is_data() {
                     let is_finished = {

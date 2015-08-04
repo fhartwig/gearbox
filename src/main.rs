@@ -1,6 +1,7 @@
-#![feature(iter_arith, vecmap, drain, result_expect)]
+#![feature(iter_arith, drain, result_expect)]
 
 extern crate bit_vec;
+extern crate vec_map;
 extern crate url;
 extern crate hyper;
 extern crate crypto;
