@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn test_int_parsing() {
         let s = b"i123e";
-        assert_eq!(parse_bvalue(s).unwrap(), BValue::Int(123isize));
+        assert_eq!(BValue::parse(s).unwrap(), BValue::Int(123isize));
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn test_dict_parsing() {
         let s = b"d3:cow3:moo4:spami3ee";
-        let bv = parse_bvalue(s).unwrap();
+        let bv = BValue::parse(s).unwrap();
         assert_eq!(bv, BValue::Dict(FromIterator::from_iter(
             vec![(&b"cow"[..], BValue::String(&b"moo"[..])),
                  (&b"spam"[..], BValue::Int(3))].into_iter()),
