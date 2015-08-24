@@ -157,7 +157,7 @@ impl <'a> FileReader<'a> {
         loop {
             let msg = match self.msg_chan.recv() {
                 Ok(msg) => msg,
-                Err(RecvError{}) => return
+                Err(RecvError) => return
             };
             self.handle_message(msg);
             while let Some(req) = self.requests.dequeue() {

@@ -219,7 +219,7 @@ impl fmt::Display for ConversionError {
 
 pub type ConversionResult<T> = Result<T, ConversionError>;
 
-pub trait FromBValue<'a> {
+pub trait FromBValue<'a>: Sized {
     fn from_bvalue(BValue<'a>) -> ConversionResult<Self>;
 }
 
