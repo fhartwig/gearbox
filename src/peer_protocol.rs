@@ -539,7 +539,7 @@ impl PeerConnection {
             }
 
             let mut bit_offset = 0;
-            for &byte in bitfield.iter() {
+            for &byte in bitfield {
                 for bit_index in (0..8) {
                     let has_piece = (byte >> (7 - bit_index)) & 0x01 == 0x01;
                     if has_piece {
@@ -988,7 +988,7 @@ impl <'a>PeerEventHandler<'a> {
     }
 
     fn handle_finished_piece(&mut self, piece_index: PieceIndex) {
-        for conn in self.open_conns.iter_mut() {
+        for conn in &mut self.open_conns {
             conn.notify_have(piece_index);
         }
         if self.common_info.our_pieces.is_complete() {

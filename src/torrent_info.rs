@@ -60,7 +60,7 @@ impl TorrentInfo {
         }
         //let piece_count = piece_hashes.len() / 20;
         // 0-length file list is an error
-        if files.len() == 0 {
+        if files.is_empty() {
             return None
         }
         let mut hasher = Sha1::new();

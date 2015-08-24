@@ -74,9 +74,8 @@ impl UI {
             match self.rustbox.peek_event(Duration::seconds(0), false) {
                 Ok(Event::NoEvent) => return false,
                 Ok(Event::KeyEvent(key)) => {
-                    match key {
-                        Some(Key::Char('q')) => return true,
-                        _ => ()
+                    if let Some(Key::Char('q')) = key {
+                        return true;
                     }
                 },
                 Err(_) => panic!("termbox error"),
@@ -93,6 +92,5 @@ fn simple_moving_average(history: &mut VecDeque<u64>, new: u64) -> u64 {
     }
     history.push_back(new);
     let total: u64 = history.iter().sum();
-    let avg = total / history.len() as u64;
-    avg
+    total / history.len() as u64
 }

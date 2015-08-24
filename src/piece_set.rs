@@ -88,7 +88,7 @@ impl PieceSet {
 impl Index<PieceIndex> for PieceSet {
     type Output = bool;
 
-    fn index<'a>(&'a self, index: PieceIndex) -> &bool {
+    fn index(&self, index: PieceIndex) -> &bool {
         &self.bitv[index.0 as usize]
     }
 }

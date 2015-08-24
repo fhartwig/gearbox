@@ -191,7 +191,7 @@ impl <'a> BValue<'a> {
         }
     }
 
-    pub fn parse<'b>(input: &'b [u8]) -> ParseResult<BValue<'b>> {
+    pub fn parse(input: &[u8]) -> ParseResult<BValue> {
         let mut parser = try!(Parser::new(input));
         parser.parse_value()
     }

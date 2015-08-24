@@ -61,9 +61,9 @@ impl <'a>FromBValue<'a> for Tracker {
 impl Tracker {
     pub fn make_request(&self, request: &TrackerRequest)
                         -> Result<Vec<PeerInfo>, ()> {
-        match self {
-            &Tracker::Http(ref url) => make_http_request(url.clone(), request),
-            &Tracker::Udp(ref addr) => make_udp_request(addr, request)
+        match *self {
+            Tracker::Http(ref url) => make_http_request(url.clone(), request),
+            Tracker::Udp(ref addr) => make_udp_request(addr, request)
         }
     }
 }
