@@ -12,9 +12,9 @@ use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
 use piece_set::PieceSet;
 use ui::UI;
 
-use mio::{self, Token, PollOpt, Interest, TryRead, TryWrite};
+use bytes::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
+use mio::{self, EventLoop, EventSet, Token, PollOpt, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
-use mio::buf::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
 use mio::util::Slab;
 
 use vec_map::VecMap;
@@ -911,7 +911,7 @@ struct PeerEventHandler<'a> {
     ui: UI
 }
 
-impl <'a>PeerEventHandler<'a> {
+impl <'a> PeerEventHandler<'a> {
     fn new(sock: TcpListener, torrent: &'a TorrentInfo,
            piece_reader_chan: Sender<PieceReaderMessage>,
            block_writer_chan: Sender<PieceData>,
@@ -942,8 +942,8 @@ impl <'a>PeerEventHandler<'a> {
                                                    self.own_peer_id);
         if let Ok(tok) = self.conn_nursery.insert(peer_conn) {
             let conn_ref = &self.conn_nursery[tok].conn;
-            event_loop.register_opt(conn_ref, tok,
-                    Interest::readable() | Interest::writable(),
+            event_loop.register(conn_ref, tok,
+                    EventSet::readable() | EventSet::writable(),
                     PollOpt::edge()
             ).unwrap();
         }
@@ -969,8 +969,8 @@ impl <'a>PeerEventHandler<'a> {
         let peer_conn_ref = &mut self.open_conns[tok];
         peer_conn_ref.token = tok;
         event_loop.deregister(&peer_conn_ref.conn).unwrap();
-        event_loop.register_opt(&peer_conn_ref.conn, tok,
-                Interest::readable() | Interest::writable(),
+        event_loop.register(&peer_conn_ref.conn, tok,
+                EventSet::readable() | EventSet::writable(),
                 PollOpt::edge() // TODO: do we want one-shot?
         ).unwrap();
         peer_conn_ref.read(&mut self.common_info);
@@ -1035,24 +1035,21 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     type Timeout = ();
     type Message = BlockFromDisk;
 
-    fn readable(&mut self, event_loop: &mut PeerEventLoop, token: Token,
-                hint: mio::ReadHint) {
-        info!("Readable. Hint: {:?}, token: {:?}", hint, token);
-        match token {
-            LISTENER_TOKEN => { // accept new connection, handshake etc
-                self.try_accept(event_loop);
+    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token,
+            events: EventSet) {
+        if events.is_error() || events.is_hup() {
+            let Token(n) = token;
+            if n < 1024 {
+                self.conn_nursery.remove(token);
+            } else {
+                self.close_connection(token);
             }
-            Token(n) if n < 1024 => {
-                if !self.conn_nursery.contains(token) {
-                    // this is only necessary because we can get 'readable'
-                        // events after a connection has been closed
-                    return;
+        } else if events.is_readable() {
+            match token {
+                LISTENER_TOKEN => {
+                    self.try_accept(event_loop);
                 }
-                if hint.is_error() || hint.is_hup() {
-                    info!("closing connection {:?}", token);
-                    self.conn_nursery.remove(token).expect("no such token");
-                }
-                else if hint.is_data() {
+                Token(n) if n < 1024 => {
                     let is_finished = {
                         let mut conn = &mut self.conn_nursery[token];
                         conn.read().unwrap();
@@ -1061,13 +1058,8 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                     if is_finished {
                         self.migrate_conn_from_nursery(token, event_loop)
                     }
-                }
-
-            },
-            Token(_) => {
-                if hint.is_hup() || hint.is_error() {
-                    self.close_connection(token);
-                } else if hint.is_data() {
+                },
+                _ => {
                     self.open_conns[token].read(&mut self.common_info);
                     // check messages from the connection
                     if let Some(a) = self.common_info.handler_action {
@@ -1079,31 +1071,29 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                     }
                 }
             }
-        }
-    }
-
-    fn writable(&mut self, event_loop: &mut PeerEventLoop, token: Token) {
-        let Token(n) = token;
-        if n < 1024 { // connection that hasn't completed the handshake
-            if !self.conn_nursery.contains(token) {
-                // this is only necessary because we can get writable
-                    // events after a connection has been closed
-                return;
-            }
-            let is_finished = {
-                let mut conn = &mut self.conn_nursery[token];
-                conn.write().unwrap();
-                conn.handshake_finished()
-            };
-            if is_finished {
-                self.migrate_conn_from_nursery(token, event_loop)
-            }
-        } else { // post-handshake connection
-            if let Some(conn) = self.open_conns.get_mut(token) {
-                conn.maybe_writable = true;
-                if Buf::has_remaining(&conn.send_buf) ||
-                        !conn.outgoing_msgs.is_empty() {
-                    conn.write(&mut self.common_info)
+        } else if events.is_writable() {
+            let Token(n) = token;
+            if n < 1024 { // connection that hasn't completed the handshake
+                if !self.conn_nursery.contains(token) {
+                    // this is only necessary because we can get writable
+                        // events after a connection has been closed
+                    return;
+                }
+                let is_finished = {
+                    let mut conn = &mut self.conn_nursery[token];
+                    conn.write().unwrap();
+                    conn.handshake_finished()
+                };
+                if is_finished {
+                    self.migrate_conn_from_nursery(token, event_loop)
+                }
+            } else { // post-handshake connection
+                if let Some(conn) = self.open_conns.get_mut(token) {
+                    conn.maybe_writable = true;
+                    if Buf::has_remaining(&conn.send_buf) ||
+                            !conn.outgoing_msgs.is_empty() {
+                        conn.write(&mut self.common_info)
+                    }
                 }
             }
         }
@@ -1121,7 +1111,7 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
             }
             return; // the connection that requested that block has been closed
         }
-         let expected = (msg.receiver.id, msg.info);
+        let expected = (msg.receiver.id, msg.info);
         // otherwise, we are receiving a block that we tried to cancel
         if self.common_info.pending_disk_blocks.front() == Some(&expected) {
             conn.add_outgoing_block(msg.data);
@@ -1148,8 +1138,8 @@ fn initiate_peer_connections(event_loop: &mut PeerEventLoop,
     for peer in peers.iter().take(INIT_PEER_CONN_LIMIT) {
         let conn = HandshakingConnection::open(peer, torrent, own_peer_id);
         let tok = conn_nursery.insert(conn).ok().unwrap();
-        event_loop.register_opt(&conn_nursery[tok].conn, tok,
-                Interest::readable() | Interest::writable(),
+        event_loop.register(&conn_nursery[tok].conn, tok,
+                EventSet::readable() | EventSet::writable(),
                 PollOpt::edge()
         ).unwrap();
     }
@@ -1183,8 +1173,8 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
         port: LISTENING_PORT
     };
     let peers = handler.tracker.make_request(&tracker_request).unwrap();
-    event_loop.register_opt(&handler.listening_sock, LISTENER_TOKEN,
-                            Interest::readable(), PollOpt::edge()).unwrap();
+    event_loop.register(&handler.listening_sock, LISTENER_TOKEN,
+                            EventSet::readable(), PollOpt::edge()).unwrap();
     initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
                               &mut handler.conn_nursery);
     event_loop.timeout_ms((), 2_000).unwrap();
@@ -1352,7 +1342,7 @@ mod tests {
     #[test]
     fn test_serialise_peer_msg() {
         use super::PeerMsg;
-        use mio::buf::{Buf, RingBuf};
+        use bytes::{Buf, RingBuf};
 
         let mut buf = RingBuf::new(super::SEND_BUF_SIZE);
         {

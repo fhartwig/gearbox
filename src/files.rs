@@ -6,7 +6,7 @@ use std::mem;
 use std::marker::PhantomData;
 use std::os::unix::io::AsRawFd;
 
-use mio::buf::{Buf, MutBuf, RingBuf};
+use bytes::{Buf, MutBuf, RingBuf};
 use mio::Sender;
 use nix::sys::uio::{pread, pwrite};
 
@@ -189,18 +189,20 @@ impl <'a> FileReader<'a> {
             // write them somewhere in peer_protocol
         let mut data = RingBuf::new(SEND_BUF_SIZE);
         write_message_header(&mut data, block_info);
-        let mut cur_offset_in_piece = 0;
         for section in self.torrent.map_block(block_info.piece_index,
                                               block_info.offset,
                                               block_info.length) {
             let handle = self.handles.get(section.file_index);
-            let buf = &mut data.mut_bytes()
-                          [cur_offset_in_piece..
-                           cur_offset_in_piece + section.length as usize];
-            pread(handle.as_raw_fd(), buf, section.offset as i64).unwrap();
-            cur_offset_in_piece += section.length as usize;
+            // FIXME: any way to avoid unsafe when using pread?
+            unsafe {
+                let bytes_read = {
+                    let buf = &mut data.mut_bytes()[..section.length as usize];
+                    pread(handle.as_raw_fd(), buf,
+                          section.offset as i64).unwrap()
+                };
+                MutBuf::advance(&mut data, bytes_read);
+            }
         }
-        MutBuf::advance(&mut data, block_info.length as usize);
         let block = BlockFromDisk {
             info: *block_info,
             data: data,

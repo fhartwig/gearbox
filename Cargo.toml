@@ -13,6 +13,7 @@ byteorder = "*"
 time = "*"
 bit-vec = "*"
 vec_map = "*"
+bytes = { git = "https://github.com/carllerche/bytes", rev = "7edb577d0a" }
 
 [dependencies.hyper]
 git = "https://github.com/hyperium/hyper"

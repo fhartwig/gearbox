@@ -1,4 +1,4 @@
-use mio::buf::RingBuf;
+use bytes::RingBuf;
 use mio::Token;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

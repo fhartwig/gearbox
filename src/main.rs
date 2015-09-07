@@ -1,5 +1,6 @@
 #![feature(iter_arith, drain, result_expect)]
 
+extern crate bytes;
 extern crate bit_vec;
 extern crate vec_map;
 extern crate url;
@@ -59,7 +60,7 @@ fn main() {
     );
 
     let event_loop = mio::EventLoop::new().ok()
-            .expect("Error opening event loop");
+            .expect("Error creating event loop");
     let block_from_disk_sender = event_loop.channel();
     let torrent_info_arc_clone = torrent_info_arc.clone();
     let reader_guard = ::std::thread::spawn(
