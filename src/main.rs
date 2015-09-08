@@ -40,10 +40,9 @@ mod ui;
 fn main() {
     env_logger::init().unwrap();
     let path = PathBuf::from(&std::env::args().nth(1).unwrap());
-    let mut data_vec = Vec::new();
-    File::open(&path).unwrap().read_to_end(&mut data_vec).unwrap();
-    let data = data_vec.into_boxed_slice();
-    let (tracker, torrent_info) = parse_torrent_file(data).unwrap();
+    let mut data = Vec::new();
+    File::open(&path).unwrap().read_to_end(&mut data).unwrap();
+    let (tracker, torrent_info) = parse_torrent_file(&data[..]).unwrap();
     println!("Info: {:?}", torrent_info);
     let mut peer_id = [0u8;20];
     for b in &mut peer_id {
@@ -75,9 +74,8 @@ fn main() {
     writer_guard.join().expect("writer thread panicked");
 }
 
-// TODO: where should this live?
-fn parse_torrent_file<'a>(data: Box<[u8]>) -> Option<(Tracker, TorrentInfo)> {
-    let mut bvalue = BValue::parse(&*data).unwrap();
+fn parse_torrent_file(data: &[u8]) -> Option<(Tracker, TorrentInfo)> {
+    let mut bvalue = BValue::parse(data).unwrap();
     let (info, tracker) = match (bvalue.get(b"info"), bvalue.get(b"announce")) {
         (Ok(info_dict), Ok(tracker)) => (info_dict, tracker),
         _ => return None
