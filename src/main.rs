@@ -22,7 +22,7 @@ use std::io::Read;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
-use bencode::BValue;
+use bencode::{BValue, FromBValue};
 use peer_protocol::run_event_loop;
 use tracker::Tracker;
 use torrent_info::TorrentInfo;
@@ -76,12 +76,10 @@ fn main() {
 
 fn parse_torrent_file(data: &[u8]) -> Option<(Tracker, TorrentInfo)> {
     let mut bvalue = BValue::parse(data).unwrap();
-    let (info, tracker) = match (bvalue.get(b"info"), bvalue.get(b"announce")) {
-        (Ok(info_dict), Ok(tracker)) => (info_dict, tracker),
-        _ => return None
-    };
-    match (bencode::FromBValue::from_bvalue(tracker), bencode::FromBValue::from_bvalue(info)) {
-        (Ok(tracker_value), Ok(info_value)) => Some((tracker_value, info_value)),
+    let info = bvalue.get(b"info").and_then(FromBValue::from_bvalue);
+    let tracker = bvalue.get(b"announce").and_then(FromBValue::from_bvalue);
+    match (tracker, info) {
+        (Ok(tracker), Ok(info)) => Some((tracker, info)),
         _ => None
     }
 }
