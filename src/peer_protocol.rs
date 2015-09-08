@@ -12,7 +12,7 @@ use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
 use piece_set::PieceSet;
 use ui::UI;
 
-use bytes::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf};
+use bytes::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf, Take};
 use mio::{self, EventLoop, EventSet, Token, PollOpt, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::util::Slab;
@@ -173,7 +173,7 @@ pub struct PeerConnection {
 
 pub struct PieceData {
     pub index: PieceIndex,
-    pub blocks: VecMap<RingBuf>,
+    pub blocks: VecMap<Take<RingBuf>>,
     block_count: u16,
     blocks_received: u16
 }
@@ -191,13 +191,13 @@ impl PieceData {
         }
     }
 
-    fn add_block(&mut self, block_info: BlockInfo, mut data: RingBuf) {
+    fn add_block(&mut self, block_info: BlockInfo, data: RingBuf) {
         debug_assert!(block_info.piece_index == self.index);
         let block_index = block_info.offset / BLOCK_SIZE;
         debug_assert!(self.blocks.get(&(block_index as usize)).is_none());
         self.blocks_received += 1;
-        data.set_len(block_info.length as usize);
-        self.blocks.insert(block_index as usize, data);
+        self.blocks.insert(block_index as usize,
+                           Take::new(data, block_info.length as usize));
     }
 
     fn is_complete(&self) -> bool {
@@ -625,7 +625,6 @@ impl PeerConnection {
             }
             let current_piece_blocks =
                 self.current_piece_blocks.as_mut().unwrap();
-            old_buf.set_len(block_info.length as usize);
             if block_info.piece_index == current_piece_blocks.index {
                 current_piece_blocks.add_block(block_info, old_buf)
             } else {
