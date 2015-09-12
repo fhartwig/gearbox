@@ -658,9 +658,9 @@ impl PeerConnection {
     fn handle_completed_piece(&mut self, common: &mut CommonInfo)
                               -> PeerMsgResult {
         let new_current_piece_blocks = if !self.next_piece_blocks.is_empty() {
-            let next_piece_blocks = mem::replace(&mut self.next_piece_blocks,
-                                                 Vec::new());
-            let (info, data) = self.next_piece_blocks.pop().unwrap();
+            let mut next_piece_blocks =
+                mem::replace(&mut self.next_piece_blocks, Vec::new());
+            let (info, data) = next_piece_blocks.pop().unwrap();
             let new_current_piece_index = info.piece_index;
             let mut new_current_piece_blocks =
                 PieceData::new(new_current_piece_index, &common.torrent);
