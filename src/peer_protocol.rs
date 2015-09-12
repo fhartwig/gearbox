@@ -657,35 +657,40 @@ impl PeerConnection {
 
     fn handle_completed_piece(&mut self, common: &mut CommonInfo)
                               -> PeerMsgResult {
-        let new_current_piece_blocks = if !self.next_piece_blocks.is_empty() {
-            let mut next_piece_blocks =
+        let new_current_piece_blocks =
+                if let Some((info, data)) = self.next_piece_blocks.pop() {
+            let next_piece_blocks =
                 mem::replace(&mut self.next_piece_blocks, Vec::new());
-            let (info, data) = next_piece_blocks.pop().unwrap();
             let new_current_piece_index = info.piece_index;
             let mut new_current_piece_blocks =
                 PieceData::new(new_current_piece_index, &common.torrent);
             new_current_piece_blocks.add_block(info, data);
-            for (info, data) in next_piece_blocks {
+            for block@(info, data) in next_piece_blocks {
                 if info.piece_index == new_current_piece_index {
                     new_current_piece_blocks.add_block(info, data);
                 } else {
-                    self.next_piece_blocks.push((info, data));
+                    self.next_piece_blocks.push(block);
                 }
             }
             Some(new_current_piece_blocks)
         } else {
             None
         };
+        // FIXME: handle the (admittedly unlikely) case where new_current_piece
+        // is already complete (because for some reason our the peer only
+        // sent the last piece of the current after sending all the blocks
+        // of the next piece). Currently this would be a problem, since
+        // we only check if a piece is complete after receiving a block.
 
-        let current_piece_blocks = mem::replace(&mut self.current_piece_blocks,
-                                                new_current_piece_blocks)
-                                        .unwrap();
-        let index = current_piece_blocks.index;
-        if !current_piece_blocks.verify(common) {
+        let finished_piece_blocks = mem::replace(&mut self.current_piece_blocks,
+                                                 new_current_piece_blocks)
+                                         .unwrap();
+        let index = finished_piece_blocks.index;
+        if !finished_piece_blocks.verify(common) {
             return Err(MsgError::BadPieceHash)
         }
         common.our_pieces.set_true(index);
-        common.piece_writer_chan.send(current_piece_blocks).unwrap();
+        common.piece_writer_chan.send(finished_piece_blocks).unwrap();
         common.handler_action = Some(HandlerAction::FinishedPiece(index));
         Ok(())
     }
