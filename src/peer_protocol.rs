@@ -28,7 +28,8 @@ struct HandshakingConnection {
     conn: TcpStream,
     recv_buf: Vec<u8>,
     send_buf: ByteBuf,
-    bytes_received: usize
+    bytes_received: usize,
+    closed: bool
 }
 
 impl HandshakingConnection {
@@ -47,7 +48,8 @@ impl HandshakingConnection {
             conn: conn,
             recv_buf: vec![0;HANDSHAKE_BYTES_LENGTH],
             send_buf: send_buf.flip(),
-            bytes_received: 0
+            bytes_received: 0,
+            closed: false
         }
     }
 
@@ -168,7 +170,8 @@ pub struct PeerConnection {
     token: Token,
     maybe_writable: bool,
     outgoing_buf_bytes_sent: u32,
-    outgoing_block_length: Option<u16>
+    outgoing_block_length: Option<u16>,
+    closed: bool
 }
 
 pub struct PieceData {
@@ -322,7 +325,8 @@ impl PeerConnection {
                                 // connection has to remember to set this
             maybe_writable: true,
             outgoing_buf_bytes_sent: 0,
-            outgoing_block_length: None
+            outgoing_block_length: None,
+            closed: false
         }
     }
 
@@ -907,7 +911,8 @@ struct PeerEventHandler<'a> {
     common_info: CommonInfo<'a>,
     own_peer_id: &'a [u8;20],
     tracker: Tracker,
-    ui: UI
+    ui: UI,
+    closed_conns: Vec<Token>
 }
 
 impl <'a> PeerEventHandler<'a> {
@@ -927,7 +932,8 @@ impl <'a> PeerEventHandler<'a> {
             own_peer_id: peer_id,
             cur_conn_id: 0,
             tracker: tracker,
-            ui: UI::init(init_stats)
+            ui: UI::init(init_stats),
+            closed_conns: Vec::new()
         }
     }
 
@@ -1015,18 +1021,7 @@ impl <'a> PeerEventHandler<'a> {
             left: bytes_remaining,
             port: LISTENING_PORT
         };
-
         self.tracker.make_request(&request).unwrap();
-    }
-
-    fn close_connection(&mut self, token: Token) {
-        if let Some(&PeerConnection{conn_id, ..}) = self.open_conns.get(token) {
-            self.open_conns.remove(token);
-            self.common_info.piece_reader_chan.send(
-                PieceReaderMessage::CancelRequestsForConnection(conn_id)
-            ).unwrap();
-            // TODO: recycle recv_buf and send_buf
-        }
     }
 }
 
@@ -1035,27 +1030,43 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     type Message = BlockFromDisk;
 
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token,
-            events: EventSet) {
+             events: EventSet) {
+        // ignore events after connection has been closed:
+        match token {
+            LISTENER_TOKEN => {},
+            Token(n) if n < 1024 => {
+                if self.conn_nursery[token].closed { return }
+            },
+            _ => {
+                if self.open_conns[token].closed { return }
+            }
+        }
+
         if events.is_error() || events.is_hup() {
             let Token(n) = token;
             if n < 1024 {
-                self.conn_nursery.remove(token);
+                self.conn_nursery[token].closed = true;
             } else {
-                self.close_connection(token);
+                self.open_conns[token].closed = true;
             }
-        } else if events.is_readable() {
+            self.closed_conns.push(token);
+            return;
+        }
+
+        if events.is_readable() {
             match token {
                 LISTENER_TOKEN => {
                     self.try_accept(event_loop);
                 }
                 Token(n) if n < 1024 => {
                     let is_finished = {
-                        let mut conn = &mut self.conn_nursery[token];
+                        let conn = &mut self.conn_nursery[token];
                         conn.read().unwrap();
                         conn.handshake_finished()
                     };
                     if is_finished {
-                        self.migrate_conn_from_nursery(token, event_loop)
+                        self.migrate_conn_from_nursery(token, event_loop);
+                        return;
                     }
                 },
                 _ => {
@@ -1070,14 +1081,11 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                     }
                 }
             }
-        } else if events.is_writable() {
+        }
+
+        if events.is_writable() {
             let Token(n) = token;
             if n < 1024 { // connection that hasn't completed the handshake
-                if !self.conn_nursery.contains(token) {
-                    // this is only necessary because we can get writable
-                        // events after a connection has been closed
-                    return;
-                }
                 let is_finished = {
                     let mut conn = &mut self.conn_nursery[token];
                     conn.write().unwrap();
@@ -1087,12 +1095,11 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
                     self.migrate_conn_from_nursery(token, event_loop)
                 }
             } else { // post-handshake connection
-                if let Some(conn) = self.open_conns.get_mut(token) {
-                    conn.maybe_writable = true;
-                    if Buf::has_remaining(&conn.send_buf) ||
-                            !conn.outgoing_msgs.is_empty() {
-                        conn.write(&mut self.common_info)
-                    }
+                let conn = &mut self.open_conns[token];
+                conn.maybe_writable = true;
+                if Buf::has_remaining(&conn.send_buf) ||
+                        !conn.outgoing_msgs.is_empty() {
+                    conn.write(&mut self.common_info)
                 }
             }
         }
@@ -1124,6 +1131,24 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
             event_loop.shutdown();
         }
         event_loop.timeout_ms((), 1_000).unwrap();
+    }
+
+    fn tick(&mut self, _event_loop: &mut EventLoop<Self>) {
+        // close all connections that are marked as closed
+        for &token in &self.closed_conns {
+            let Token(n) = token;
+            if n < 1024 {
+                self.conn_nursery.remove(token);
+            } else {
+                if let Some(PeerConnection{conn_id, ..}) =
+                        self.open_conns.remove(token) {
+                    self.common_info.piece_reader_chan.send(
+                        PieceReaderMessage::CancelRequestsForConnection(conn_id)
+                    ).unwrap();
+                }
+            }
+        }
+        self.closed_conns.clear();
     }
 }
 
