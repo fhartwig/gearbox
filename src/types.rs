@@ -20,6 +20,21 @@ pub struct BlockInfo {
     pub length: u32
 }
 
+#[derive(Clone, Debug)]
+pub struct BlockFromPeer {
+    pub info: BlockInfo,
+    pub data: RingBuf
+}
+
+impl BlockFromPeer {
+    pub fn new(info: BlockInfo, data: RingBuf) -> BlockFromPeer {
+        BlockFromPeer {
+            info: info,
+            data: data
+        }
+    }
+}
+
 pub struct BlockFromDisk {
     pub receiver: BlockReceiver,
     pub info: BlockInfo,

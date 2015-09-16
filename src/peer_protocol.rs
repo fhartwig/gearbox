@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 use torrent_info::TorrentInfo;
 use tracker::{self, Tracker, Event, TrackerRequest};
 use peer::PeerInfo;
-use types::{BlockInfo, BlockFromDisk, BlockRequest, PieceIndex,
+use types::{BlockInfo, BlockFromDisk, BlockFromPeer, BlockRequest, PieceIndex,
     PieceReaderMessage, ConnectionId, BlockReceiver, Stats};
 use piece_set::PieceSet;
 use ui::UI;
@@ -17,6 +17,7 @@ use mio::{self, EventLoop, EventSet, Token, PollOpt, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::util::Slab;
 
+use bit_vec::BitVec;
 use vec_map::VecMap;
 
 use crypto::sha1::Sha1;
@@ -25,15 +26,14 @@ use crypto::digest::Digest;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 struct HandshakingConnection {
-    conn: TcpStream,
+    sock: TcpStream,
     recv_buf: Vec<u8>,
     send_buf: ByteBuf,
-    bytes_received: usize,
-    closed: bool
+    bytes_received: usize
 }
 
 impl HandshakingConnection {
-    fn new(conn: TcpStream, torrent: &TorrentInfo, own_id: &[u8])
+    fn new(sock: TcpStream, torrent: &TorrentInfo, own_id: &[u8])
             -> HandshakingConnection {
         debug!("In handshakingConn::new");
         let mut send_buf = ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH);
@@ -45,11 +45,10 @@ impl HandshakingConnection {
         send_buf.write_slice(torrent.info_hash());
         send_buf.write_slice(own_id);
         HandshakingConnection {
-            conn: conn,
+            sock: sock,
             recv_buf: vec![0;HANDSHAKE_BYTES_LENGTH],
             send_buf: send_buf.flip(),
-            bytes_received: 0,
-            closed: false
+            bytes_received: 0
         }
     }
 
@@ -67,7 +66,7 @@ impl HandshakingConnection {
             let mut slice_buf = MutSliceBuf::wrap(
                 &mut self.recv_buf[self.bytes_received..
                                    HANDSHAKE_BYTES_LENGTH]);
-            self.conn.try_read_buf(&mut slice_buf)
+            self.sock.try_read_buf(&mut slice_buf)
         };
         match read_result {
             Ok(Some(bytes_read)) => {
@@ -83,7 +82,7 @@ impl HandshakingConnection {
     /// return Err(()) on IO error
     fn write(&mut self) -> Result<(), ()> {
         debug!("In handshakingConn::write");
-        match self.conn.try_write_buf(&mut self.send_buf) {
+        match self.sock.try_write_buf(&mut self.send_buf) {
             Ok(None) => Ok(()), // we need to wait before sending more data
             Ok(Some(_written_bytes)) => Ok(()),
             Err(_) => Err(())
@@ -101,7 +100,7 @@ impl HandshakingConnection {
             -> Result<TcpStream, HandshakeError> {
         try!(HandshakingConnection::verify_handshake(&self.recv_buf, torrent));
         info!("Yay! Finished handshake!");
-        Ok(self.conn)
+        Ok(self.sock)
     }
 
     fn verify_handshake(handshake: &[u8], torrent: &TorrentInfo)
@@ -117,7 +116,7 @@ impl HandshakingConnection {
         if torrent.info_hash() != info_hash {
             return Err(HandshakeError::BadInfoHash);
         }
-        // the next 20 bytes are the peer's peer id
+        // the next 20 bytes are the peer's peer id (which we ignore for now)
         Ok(())
     }
 }
@@ -148,9 +147,10 @@ impl ConnectionState {
     }
 }
 
+#[derive(Debug)]
 pub struct PeerConnection {
     conn_state: ConnectionState,
-    conn: TcpStream,
+    sock: TcpStream,
     recv_buf: RingBuf,
     send_buf: RingBuf,
     peers_pieces: PieceSet,
@@ -163,7 +163,7 @@ pub struct PeerConnection {
     outgoing_msgs: VecDeque<PeerMsg>, // short messages waiting to be sent
     currently_downloading_piece: Option<CurrentPieceInfo>, // FIXME: rename this
     current_piece_blocks: Option<PieceData>,
-    next_piece_blocks: Vec<(BlockInfo, RingBuf)>,
+    next_piece_blocks: Vec<BlockFromPeer>,
     conn_id: ConnectionId,
     // number of blocks requested by the peer that we still have to deliver
     blocks_requested_by_peer: u8,
@@ -171,9 +171,55 @@ pub struct PeerConnection {
     maybe_writable: bool,
     outgoing_buf_bytes_sent: u32,
     outgoing_block_length: Option<u16>,
-    closed: bool
 }
 
+enum Connection {
+    Peer(PeerConnection),
+    Handshaking(HandshakingConnection)
+}
+
+impl Connection {
+    fn read(&mut self, common: &mut CommonInfo) {
+        match *self {
+            Connection::Handshaking(ref mut conn) => {
+                conn.read().unwrap();
+                if conn.handshake_finished() {
+                    common.handler_action =
+                        Some(HandlerAction::FinishedHandshake);
+                }
+            },
+            Connection::Peer(ref mut conn) => conn.read(common)
+        }
+    }
+
+    fn write(&mut self, common: &mut CommonInfo) {
+        match *self {
+            Connection::Handshaking(ref mut conn) => {
+                conn.write().unwrap();
+                if conn.handshake_finished() {
+                    common.handler_action =
+                        Some(HandlerAction::FinishedHandshake);
+                }
+            },
+            Connection::Peer(ref mut conn) => {
+                conn.writable(common)
+            }
+        }
+    }
+
+    fn finish_handshake(self, torrent: &TorrentInfo, id: ConnectionId,
+                        tok: Token) -> PeerConnection {
+        if let Connection::Handshaking(conn) = self {
+            let sock = conn.finish_handshake(torrent).unwrap();
+            // FIXME: can't just unwrap() this
+            PeerConnection::new(sock, torrent, id, tok)
+        } else {
+            panic!("Tried to repeatedly finish handshake")
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PieceData {
     pub index: PieceIndex,
     pub blocks: VecMap<Take<RingBuf>>,
@@ -194,13 +240,13 @@ impl PieceData {
         }
     }
 
-    fn add_block(&mut self, block_info: BlockInfo, data: RingBuf) {
-        debug_assert!(block_info.piece_index == self.index);
-        let block_index = block_info.offset / BLOCK_SIZE;
+    fn add_block(&mut self, block: BlockFromPeer) {
+        debug_assert!(block.info.piece_index == self.index);
+        let block_index = block.info.offset / BLOCK_SIZE;
         debug_assert!(self.blocks.get(&(block_index as usize)).is_none());
         self.blocks_received += 1;
         self.blocks.insert(block_index as usize,
-                           Take::new(data, block_info.length as usize));
+                           Take::new(block.data, block.info.length as usize));
     }
 
     fn is_complete(&self) -> bool {
@@ -305,11 +351,11 @@ const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 const CONCURRENT_REQUESTS_PER_PEER: u8 = 8;
 
 impl PeerConnection {
-    fn new(peer_conn: TcpStream, torrent: &TorrentInfo,
-           id: ConnectionId) -> PeerConnection {
+    fn new(sock: TcpStream, torrent: &TorrentInfo,
+           id: ConnectionId, token: Token) -> PeerConnection {
         PeerConnection {
             conn_state: ConnectionState::new(),
-            conn: peer_conn,
+            sock: sock,
             recv_buf: RingBuf::new(RECV_BUF_SIZE), // TODO: use recycled buffer
             send_buf: RingBuf::new(SEND_BUF_SIZE),
             peers_pieces: PieceSet::new_empty(torrent),
@@ -321,12 +367,10 @@ impl PeerConnection {
             next_piece_blocks: Vec::new(),
             conn_id: id,
             blocks_requested_by_peer: 0,
-            token: Token(0), // FIXME: i don't like that the creator of the
-                                // connection has to remember to set this
+            token: token,
             maybe_writable: true,
             outgoing_buf_bytes_sent: 0,
             outgoing_block_length: None,
-            closed: false
         }
     }
 
@@ -338,8 +382,17 @@ impl PeerConnection {
         }
     }
 
+    fn writable(&mut self, common: &mut CommonInfo) {
+        self.maybe_writable = true;
+        if Buf::has_remaining(&self.send_buf) ||
+                !self.outgoing_msgs.is_empty() {
+            self.write(common)
+        }
+    }
+
     fn write(&mut self, common: &mut CommonInfo) {
         debug!("In PeerConnection::write");
+
         if !self.maybe_writable {return}
 
         // FIXME: this is extremely hacky, we should check if the messages
@@ -350,7 +403,7 @@ impl PeerConnection {
         
         debug!("Sendbuf remaining: {}, capacity: {}",
                 Buf::remaining(&self.send_buf), self.send_buf.capacity());
-        match self.conn.try_write_buf(&mut self.send_buf) {
+        match self.sock.try_write_buf(&mut self.send_buf) {
             Ok(None) => self.maybe_writable = false,
             Ok(Some(written_bytes)) => {
                 info!("Wrote {} bytes of messages", written_bytes);
@@ -413,7 +466,7 @@ impl PeerConnection {
         debug!("In PeerConnection::read_message");
         // FIXME: apparently, on some platforms read() will return
         // 0 (repeatedly) when the connection has been closed
-        match self.conn.try_read_buf(&mut self.recv_buf) {
+        match self.sock.try_read_buf(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
                 info!("Read {} bytes", bytes_read);
                 if Buf::remaining(&self.recv_buf) < 4 {
@@ -629,10 +682,11 @@ impl PeerConnection {
             }
             let current_piece_blocks =
                 self.current_piece_blocks.as_mut().unwrap();
+            let block = BlockFromPeer::new(block_info, old_buf);
             if block_info.piece_index == current_piece_blocks.index {
-                current_piece_blocks.add_block(block_info, old_buf)
+                current_piece_blocks.add_block(block);
             } else {
-                self.next_piece_blocks.push((block_info, old_buf));
+                self.next_piece_blocks.push(block);
             }
             common.bytes_downloaded += block_info.length as u64;
             current_piece_blocks.is_complete()
@@ -658,16 +712,16 @@ impl PeerConnection {
     fn handle_completed_piece(&mut self, common: &mut CommonInfo)
                               -> PeerMsgResult {
         let new_current_piece_blocks =
-                if let Some((info, data)) = self.next_piece_blocks.pop() {
+                if let Some(block) = self.next_piece_blocks.pop() {
             let next_piece_blocks =
                 mem::replace(&mut self.next_piece_blocks, Vec::new());
-            let new_current_piece_index = info.piece_index;
+            let new_current_piece_index = block.info.piece_index;
             let mut new_current_piece_blocks =
                 PieceData::new(new_current_piece_index, &common.torrent);
-            new_current_piece_blocks.add_block(info, data);
-            for block@(info, data) in next_piece_blocks {
-                if info.piece_index == new_current_piece_index {
-                    new_current_piece_blocks.add_block(info, data);
+            new_current_piece_blocks.add_block(block);
+            for block in next_piece_blocks {
+                if block.info.piece_index == new_current_piece_index {
+                    new_current_piece_blocks.add_block(block);
                 } else {
                     self.next_piece_blocks.push(block);
                 }
@@ -904,20 +958,21 @@ type ConnTokenMapping = HashMap<ConnectionId, Token>;
 /// actions that the connection handlers can instruct the event loop to do
 #[derive(Clone, Copy, Debug)]
 enum HandlerAction {
-    FinishedPiece(PieceIndex)
+    FinishedPiece(PieceIndex),
+    FinishedHandshake
 }
 
 
 struct PeerEventHandler<'a> {
     listening_sock: TcpListener,
-    open_conns: Slab<PeerConnection>,
-    conn_nursery: Slab<HandshakingConnection>,
+    connections: Slab<Connection>,
     cur_conn_id: u32,
     common_info: CommonInfo<'a>,
     own_peer_id: &'a [u8;20],
     tracker: Tracker,
     ui: UI,
-    closed_conns: Vec<Token>
+    closed_conns: Vec<Token>,
+    connection_closed: BitVec
 }
 
 impl <'a> PeerEventHandler<'a> {
@@ -930,15 +985,15 @@ impl <'a> PeerEventHandler<'a> {
                                      block_writer_chan);
         let init_stats = common.current_stats();
         PeerEventHandler {
-            open_conns: Slab::new_starting_at(Token(1024), 128),
-            conn_nursery: Slab::new_starting_at(Token(2), 128),
+            connections: Slab::new_starting_at(Token(2), 256),
             listening_sock: sock,
             common_info: common,
             own_peer_id: peer_id,
             cur_conn_id: 0,
             tracker: tracker,
             ui: UI::init(init_stats),
-            closed_conns: Vec::new()
+            closed_conns: Vec::new(),
+            connection_closed: BitVec::from_elem(257, false)
         }
     }
 
@@ -950,45 +1005,12 @@ impl <'a> PeerEventHandler<'a> {
         let peer_conn = HandshakingConnection::new(conn,
                                                    &self.common_info.torrent,
                                                    self.own_peer_id);
-        if let Ok(tok) = self.conn_nursery.insert(peer_conn) {
-            let conn_ref = &self.conn_nursery[tok].conn;
-            event_loop.register(conn_ref, tok,
-                    EventSet::readable() | EventSet::writable(),
-                    PollOpt::edge()
-            ).unwrap();
-        }
-    }
-
-    fn migrate_conn_from_nursery(&mut self, token: Token,
-                                event_loop: &mut PeerEventLoop) {
-        let conn = self.conn_nursery.remove(token).unwrap();
-        let conn_id = self.next_conn_id();
-        let sock = match conn.finish_handshake(&self.common_info.torrent) {
-            Ok(sock) => sock,
-            Err(_) => { debug!("Received bad handshake"); return; }
-        };
-        let mut peer_conn = PeerConnection::new(sock, &self.common_info.torrent,
-                                                conn_id);
-        peer_conn.try_send_bitfield(&self.common_info.our_pieces);
-        self.add_conn_to_open_conns(peer_conn, event_loop);
-    }
-
-    fn add_conn_to_open_conns(&mut self, conn: PeerConnection,
-                              event_loop: &mut PeerEventLoop) {
-        let tok = self.open_conns.insert(conn).ok().unwrap();
-        let peer_conn_ref = &mut self.open_conns[tok];
-        peer_conn_ref.token = tok;
-        event_loop.deregister(&peer_conn_ref.conn).unwrap();
-        event_loop.register(&peer_conn_ref.conn, tok,
-                EventSet::readable() | EventSet::writable(),
-                PollOpt::edge() // TODO: do we want one-shot?
-        ).unwrap();
-        peer_conn_ref.read(&mut self.common_info);
-        // FIXME: read shouldn't really be called from here, since we
-            // don't handle e.g. the action queue here (it's fine for now
-            // though, because we only use the action queue when we have
-            // received an entire piece, which is clearly not going to happen
-            // here)
+        self.connections.insert_with(|tok| {
+            event_loop.register(&peer_conn.sock, tok,
+                                EventSet::readable() | EventSet::writable(),
+                                PollOpt::edge()).unwrap();
+            Connection::Handshaking(peer_conn)
+        });
     }
 
     fn next_conn_id(&mut self) -> ConnectionId {
@@ -998,8 +1020,10 @@ impl <'a> PeerEventHandler<'a> {
     }
 
     fn handle_finished_piece(&mut self, piece_index: PieceIndex) {
-        for conn in &mut self.open_conns {
-            conn.notify_have(piece_index);
+        for conn in &mut self.connections {
+            if let &mut Connection::Peer(ref mut peer_conn) = conn {
+                peer_conn.notify_have(piece_index);
+            }
         }
         if self.common_info.our_pieces.is_complete() {
             self.finish_downloading()
@@ -1037,96 +1061,71 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token,
              events: EventSet) {
         // ignore events after connection has been closed:
-        match token {
-            LISTENER_TOKEN => {},
-            Token(n) if n < 1024 => {
-                if self.conn_nursery[token].closed { return }
-            },
-            _ => {
-                if self.open_conns[token].closed { return }
-            }
-        }
+        if self.connection_closed[token.as_usize()] { return }
 
         if events.is_error() || events.is_hup() {
-            let Token(n) = token;
-            if n < 1024 {
-                self.conn_nursery[token].closed = true;
-            } else {
-                self.open_conns[token].closed = true;
-            }
+            self.connection_closed.set(token.as_usize(), true);
             self.closed_conns.push(token);
             return;
         }
 
         if events.is_readable() {
             match token {
-                LISTENER_TOKEN => {
-                    self.try_accept(event_loop);
-                }
-                Token(n) if n < 1024 => {
-                    let is_finished = {
-                        let conn = &mut self.conn_nursery[token];
-                        conn.read().unwrap();
-                        conn.handshake_finished()
-                    };
-                    if is_finished {
-                        self.migrate_conn_from_nursery(token, event_loop);
-                        return;
-                    }
-                },
-                _ => {
-                    self.open_conns[token].read(&mut self.common_info);
-                    // check messages from the connection
-                    if let Some(a) = self.common_info.handler_action {
-                        match a {
-                            HandlerAction::FinishedPiece(index) =>
-                                self.handle_finished_piece(index)
-                        }
-                        self.common_info.handler_action = None;
-                    }
-                }
+                LISTENER_TOKEN => self.try_accept(event_loop),
+                _ => self.connections[token].read(&mut self.common_info)
             }
         }
 
         if events.is_writable() {
-            let Token(n) = token;
-            if n < 1024 { // connection that hasn't completed the handshake
-                let is_finished = {
-                    let mut conn = &mut self.conn_nursery[token];
-                    conn.write().unwrap();
-                    conn.handshake_finished()
-                };
-                if is_finished {
-                    self.migrate_conn_from_nursery(token, event_loop)
-                }
-            } else { // post-handshake connection
-                let conn = &mut self.open_conns[token];
-                conn.maybe_writable = true;
-                if Buf::has_remaining(&conn.send_buf) ||
-                        !conn.outgoing_msgs.is_empty() {
-                    conn.write(&mut self.common_info)
+            self.connections[token].write(&mut self.common_info)
+        }
+
+
+        // check messages from the connection
+        if let Some(a) = self.common_info.handler_action {
+            match a {
+                HandlerAction::FinishedPiece(index) =>
+                    self.handle_finished_piece(index),
+                HandlerAction::FinishedHandshake => {
+                    let conn_id = self.next_conn_id();
+                    let PeerEventHandler{ref mut connections, ref mut common_info, ..} = *self;
+                    connections.replace_with(token, |conn| {
+                        let mut peer_conn =
+                            conn.finish_handshake(&common_info.torrent,
+                                                  conn_id, token);
+                        peer_conn.try_send_bitfield(&common_info.our_pieces);
+                        peer_conn.read(common_info);
+        // FIXME: read shouldn't really be called from here, since we
+            // don't handle e.g. the action queue here (it's fine for now
+            // though, because we only use the action queue when we have
+            // received an entire piece, which is clearly not going to happen
+            // here)
+                        Some(Connection::Peer(peer_conn))
+                    }).unwrap();
                 }
             }
+            self.common_info.handler_action = None;
         }
     }
 
     // TODO: this should be rewritten for readability / clarity
     fn notify(&mut self, _event_loop: &mut PeerEventLoop, msg: BlockFromDisk) {
-        let conn = &mut self.open_conns[msg.receiver.token];
-        if msg.receiver.id != conn.conn_id {
-            if let Some(&(receiver_id, _)) =
-                    self.common_info.pending_disk_blocks.front() {
-                if receiver_id == msg.receiver.id {
-                    self.common_info.pending_disk_blocks.pop_front();
+        if let Connection::Peer(ref mut conn) = self.connections[msg.receiver.token] {
+            if msg.receiver.id != conn.conn_id {
+                if let Some(&(receiver_id, _)) =
+                        self.common_info.pending_disk_blocks.front() {
+                    if receiver_id == msg.receiver.id {
+                        self.common_info.pending_disk_blocks.pop_front();
+                    }
                 }
+                return; // the connection that requested that block has been closed
             }
-            return; // the connection that requested that block has been closed
-        }
-        let expected = (msg.receiver.id, msg.info);
-        // otherwise, we are receiving a block that we tried to cancel
-        if self.common_info.pending_disk_blocks.front() == Some(&expected) {
-            conn.add_outgoing_block(msg.data);
-            self.common_info.pending_disk_blocks.pop_front();
+            let expected = (msg.receiver.id, msg.info);
+            // otherwise, we are receiving a block that we tried to cancel
+            if self.common_info.pending_disk_blocks.front() == Some(&expected) {
+                conn.add_outgoing_block(msg.data);
+                self.common_info.pending_disk_blocks.pop_front();
+            }
         }
     }
 
@@ -1141,16 +1140,12 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
     fn tick(&mut self, _event_loop: &mut EventLoop<Self>) {
         // close all connections that are marked as closed
         for &token in &self.closed_conns {
-            let Token(n) = token;
-            if n < 1024 {
-                self.conn_nursery.remove(token);
-            } else {
-                if let Some(PeerConnection{conn_id, ..}) =
-                        self.open_conns.remove(token) {
-                    self.common_info.piece_reader_chan.send(
-                        PieceReaderMessage::CancelRequestsForConnection(conn_id)
-                    ).unwrap();
-                }
+            self.connection_closed.set(token.as_usize(), false);
+            if let Some(Connection::Peer(PeerConnection{conn_id, ..})) =
+                    self.connections.remove(token) {
+                self.common_info.piece_reader_chan.send(
+                    PieceReaderMessage::CancelRequestsForConnection(conn_id)
+                ).unwrap();
             }
         }
         self.closed_conns.clear();
@@ -1163,14 +1158,16 @@ pub const INIT_PEER_CONN_LIMIT: usize = 40;
 fn initiate_peer_connections(event_loop: &mut PeerEventLoop,
                             peers: &[PeerInfo], torrent: &TorrentInfo,
                             own_peer_id: &[u8;20],
-                            conn_nursery: &mut Slab<HandshakingConnection>) {
+                            connections: &mut Slab<Connection>) {
     for peer in peers.iter().take(INIT_PEER_CONN_LIMIT) {
         let conn = HandshakingConnection::open(peer, torrent, own_peer_id);
-        let tok = conn_nursery.insert(conn).ok().unwrap();
-        event_loop.register(&conn_nursery[tok].conn, tok,
-                EventSet::readable() | EventSet::writable(),
-                PollOpt::edge()
-        ).unwrap();
+        connections.insert_with(|tok| {
+            event_loop.register(&conn.sock, tok,
+                                EventSet::readable() | EventSet::writable(),
+                                PollOpt::edge()
+            ).unwrap();
+            Connection::Handshaking(conn)
+        });
     }
 }
 
@@ -1205,7 +1202,7 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
     event_loop.register(&handler.listening_sock, LISTENER_TOKEN,
                             EventSet::readable(), PollOpt::edge()).unwrap();
     initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
-                              &mut handler.conn_nursery);
+                              &mut handler.connections);
     event_loop.timeout_ms((), 2_000).unwrap();
     event_loop.run(&mut handler).ok().expect("Error in event_loop.run");
 }
@@ -1222,6 +1219,7 @@ mod tests {
     use torrent_info::{TorrentInfo, FileInfo};
     use types::*;
     use mio::tcp::{TcpStream, TcpListener};
+    use mio::Token;
 
     // TODO: proper error handling, although it's not that important for tests
     fn get_socket_pair() -> (TcpStream, StdTcpStream) {
@@ -1263,9 +1261,9 @@ mod tests {
 
 
     fn mk_peer_conn(torrent: &TorrentInfo) -> (PeerConnection, StdTcpStream) {
-        // TODO: sensible variable names
         let (our_conn, peer_conn) = get_socket_pair();
-        let p_conn = PeerConnection::new(our_conn, torrent, ConnectionId(1));
+        let p_conn = PeerConnection::new(our_conn, torrent, ConnectionId(1),
+                                         Token(1234));
         (p_conn, peer_conn)
     }
 
