@@ -12,7 +12,7 @@ use types::{BlockInfo, BlockFromDisk, BlockFromPeer, BlockRequest, PieceIndex,
 use piece_set::PieceSet;
 use ui::UI;
 
-use bytes::{Buf, ByteBuf, MutBuf, MutSliceBuf, RingBuf, Take};
+use bytes::{Buf, ByteBuf, MutByteBuf, MutBuf, RingBuf, Take};
 use mio::{self, EventLoop, EventSet, Token, PollOpt, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::util::Slab;
@@ -27,7 +27,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 struct HandshakingConnection {
     sock: TcpStream,
-    recv_buf: Vec<u8>,
+    recv_buf: Take<MutByteBuf>,
     send_buf: ByteBuf,
     bytes_received: usize
 }
@@ -46,7 +46,10 @@ impl HandshakingConnection {
         send_buf.write_slice(own_id);
         HandshakingConnection {
             sock: sock,
-            recv_buf: vec![0;HANDSHAKE_BYTES_LENGTH],
+            recv_buf: Take::new(
+                ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH),
+                HANDSHAKE_BYTES_LENGTH
+            ),
             send_buf: send_buf.flip(),
             bytes_received: 0
         }
@@ -62,13 +65,7 @@ impl HandshakingConnection {
     /// return Err(()) on io error
     fn read(&mut self) -> Result<(), ()> {
         debug!("In handshakingConn::read");
-        let read_result = {
-            let mut slice_buf = MutSliceBuf::wrap(
-                &mut self.recv_buf[self.bytes_received..
-                                   HANDSHAKE_BYTES_LENGTH]);
-            self.sock.try_read_buf(&mut slice_buf)
-        };
-        match read_result {
+        match self.sock.try_read_buf(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
                 debug!("Read {} bytes", bytes_read);
                 self.bytes_received += bytes_read;
@@ -98,14 +95,15 @@ impl HandshakingConnection {
     /// finish handshake, creating a new PeerConnection
     fn finish_handshake(self, torrent: &TorrentInfo)
             -> Result<TcpStream, HandshakeError> {
-        try!(HandshakingConnection::verify_handshake(&self.recv_buf, torrent));
+        try!(self.verify_handshake(torrent));
         info!("Yay! Finished handshake!");
         Ok(self.sock)
     }
 
-    fn verify_handshake(handshake: &[u8], torrent: &TorrentInfo)
+    fn verify_handshake(&self, torrent: &TorrentInfo)
             -> Result<(), HandshakeError> {
         // precondition: recv_buf contains entire handshake worth of bytes
+        let handshake = self.recv_buf.get_ref().bytes();
         let protocol_name = &handshake[..20];
         if protocol_name != b"\x13BitTorrent protocol" {
             return Err(HandshakeError::BadProtocolHeader);
