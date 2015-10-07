@@ -557,7 +557,7 @@ impl PeerConnection {
         if piece_index >= common.torrent.piece_count() {
             return Err(MsgError::PieceIndexTooLarge);
         }
-        let piece_index = PieceIndex(piece_index);
+        let piece_index = PieceIndex::from(piece_index);
         self.peers_pieces.set_true(piece_index);
         self.new_piece_available(Some(piece_index), common);
         Ok(())
@@ -599,7 +599,7 @@ impl PeerConnection {
                     let has_piece = (byte >> (7 - bit_index)) & 0x01 == 0x01;
                     if has_piece {
                         self.peers_pieces.set_true(
-                            PieceIndex(bit_offset + bit_index as u32)
+                            PieceIndex::from(bit_offset + bit_index as u32)
                         );
                     }
                 }
@@ -612,18 +612,18 @@ impl PeerConnection {
 
     fn handle_request(&mut self, common: &mut CommonInfo) -> PeerMsgResult {
         let mut reader = &self.recv_buf.bytes()[..12];
-        let piece_index = reader.read_u32::<BigEndian>().unwrap();
+        let piece_index = PieceIndex::from(reader.read_u32::<BigEndian>().unwrap());
         let offset = reader.read_u32::<BigEndian>().unwrap();
         let length = reader.read_u32::<BigEndian>().unwrap();
 
-        if piece_index > common.torrent.piece_count() {
+        if u32::from(piece_index) > common.torrent.piece_count() {
             return Err(MsgError::PieceIndexTooLarge);
         }
-        if !common.our_pieces[PieceIndex(piece_index)] {
+        if !common.our_pieces[piece_index] {
             return Err(MsgError::PieceNotAvailable);
         }
         let expected_length =
-            common.torrent.get_piece_length(PieceIndex(piece_index));
+            common.torrent.get_piece_length(piece_index);
         if length > 2u32.pow(14) || length > expected_length {
             return Err(MsgError::RequestedBlockTooLong);
         }
@@ -631,7 +631,7 @@ impl PeerConnection {
             return Err(MsgError::BadOffsetLengthCombination);
         }
         let block = BlockInfo {
-            piece_index: PieceIndex(piece_index),
+            piece_index: piece_index,
             offset: offset,
             length: length
         };
@@ -665,7 +665,9 @@ impl PeerConnection {
             let mut reader: &[u8] = old_buf.bytes();
             BlockInfo {
                 // TODO: check that block info is valid
-                piece_index: PieceIndex(reader.read_u32::<BigEndian>().unwrap()),
+                piece_index: PieceIndex::from(
+                    reader.read_u32::<BigEndian>().unwrap()
+                ),
                 offset: reader.read_u32::<BigEndian>().unwrap(),
                 length: msg_length as u32 - 8
             }
@@ -753,7 +755,9 @@ impl PeerConnection {
         let mut reader = &self.recv_buf.bytes()[msg_offset..msg_offset + 12];
         // TODO: validate BlockInfo fields
         let block_info = BlockInfo {
-            piece_index: PieceIndex(reader.read_u32::<BigEndian>().unwrap()),
+            piece_index: PieceIndex::from(
+                reader.read_u32::<BigEndian>().unwrap()
+            ),
             offset: reader.read_u32::<BigEndian>().unwrap(),
             length: reader.read_u32::<BigEndian>().unwrap()
         };
@@ -930,12 +934,12 @@ impl PeerMsg {
             Have(index) => {
                 try!(writer.write_u32::<BigEndian>(1 + 4));
                 try!(writer.write_u8(4));
-                try!(writer.write_u32::<BigEndian>(index.0));
+                try!(writer.write_u32::<BigEndian>(u32::from(index)));
             },
             Request(block_info) => {
                 try!(writer.write_u32::<BigEndian>(1 + 4 + 4 + 4));
                 try!(writer.write_u8(6));
-                try!(writer.write_u32::<BigEndian>(block_info.piece_index.0));
+                try!(writer.write_u32::<BigEndian>(block_info.piece_index.into()));
                 try!(writer.write_u32::<BigEndian>(block_info.offset));
                 try!(writer.write_u32::<BigEndian>(block_info.length));
             }/*,
@@ -1014,7 +1018,7 @@ impl <'a> PeerEventHandler<'a> {
     fn next_conn_id(&mut self) -> ConnectionId {
         let conn_id = self.cur_conn_id;
         self.cur_conn_id += 1;
-        ConnectionId(conn_id)
+        ConnectionId::from(conn_id)
     }
 
     fn handle_finished_piece(&mut self, piece_index: PieceIndex) {
@@ -1260,8 +1264,8 @@ mod tests {
 
     fn mk_peer_conn(torrent: &TorrentInfo) -> (PeerConnection, StdTcpStream) {
         let (our_conn, peer_conn) = get_socket_pair();
-        let p_conn = PeerConnection::new(our_conn, torrent, ConnectionId(1),
-                                         Token(1234));
+        let p_conn = PeerConnection::new(our_conn, torrent,
+                                         ConnectionId::from(1), Token(1234));
         (p_conn, peer_conn)
     }
 
@@ -1328,9 +1332,9 @@ mod tests {
 
         let mut peers_piece_set = PieceSet::new_empty(&torrent);
         let (mut common, _, _) = mk_common_info(&torrent);
-        peers_piece_set.set_true(PieceIndex(3));
-        peers_piece_set.set_true(PieceIndex(23));
-        peers_piece_set.set_true(PieceIndex(42));
+        peers_piece_set.set_true(PieceIndex::from(3));
+        peers_piece_set.set_true(PieceIndex::from(23));
+        peers_piece_set.set_true(PieceIndex::from(42));
 
         let bit_vec = peers_piece_set.to_bytes();
         let mut msg = Vec::new();
@@ -1345,11 +1349,11 @@ mod tests {
         }
         other_end.write_all(&msg).unwrap();
         peer_conn.read(&mut common);
-        assert!(!peer_conn.peers_pieces[PieceIndex(2)]);
-        assert!(!peer_conn.peers_pieces[PieceIndex(4)]);
-        assert!(peer_conn.peers_pieces[PieceIndex(3)]);
-        assert!(peer_conn.peers_pieces[PieceIndex(23)]);
-        assert!(peer_conn.peers_pieces[PieceIndex(42)]);
+        assert!(!peer_conn.peers_pieces[PieceIndex::from(2)]);
+        assert!(!peer_conn.peers_pieces[PieceIndex::from(4)]);
+        assert!(peer_conn.peers_pieces[PieceIndex::from(3)]);
+        assert!(peer_conn.peers_pieces[PieceIndex::from(23)]);
+        assert!(peer_conn.peers_pieces[PieceIndex::from(42)]);
 
         // we should be interested...
         assert!(peer_conn.conn_state.we_interested);
@@ -1373,7 +1377,7 @@ mod tests {
         {
             let msg = PeerMsg::Interested;
             msg.serialise(&mut buf).unwrap();
-            let msg = PeerMsg::Have(PieceIndex(0));
+            let msg = PeerMsg::Have(PieceIndex::from(0));
             msg.serialise(&mut buf).unwrap();
         }
         let written = Buf::bytes(&buf);
@@ -1389,20 +1393,21 @@ mod tests {
         let (mut peer_conn, mut other_end) = mk_peer_conn(&torrent);
         let (mut common, _, _) = mk_common_info(&torrent);
         let mut outgoing_buf = Vec::new();
-        PeerMsg::Have(PieceIndex(23)).serialise(&mut outgoing_buf).unwrap();
+        PeerMsg::Have(PieceIndex::from(23)).serialise(&mut outgoing_buf).unwrap();
         other_end.write_all(&outgoing_buf).unwrap();
         peer_conn.read(&mut common);
-        assert!(peer_conn.peers_pieces[PieceIndex(23)]);
-        peer_conn.peers_pieces.set_false(PieceIndex(23));
+        assert!(peer_conn.peers_pieces[PieceIndex::from(23)]);
+        peer_conn.peers_pieces.set_false(PieceIndex::from(23));
 
         outgoing_buf.clear();
         PeerMsg::Interested.serialise(&mut outgoing_buf).unwrap();
-        PeerMsg::Have(PieceIndex(42)).serialise(&mut outgoing_buf).unwrap();
+        PeerMsg::Have(PieceIndex::from(42))
+                 .serialise(&mut outgoing_buf).unwrap();
         other_end.write(&outgoing_buf).unwrap();
         peer_conn.read(&mut common);
         // make sure the first message hasn't been handled twice
-        assert!(!peer_conn.peers_pieces[PieceIndex(23)]);
-        assert!(peer_conn.peers_pieces[PieceIndex(42)]);
+        assert!(!peer_conn.peers_pieces[PieceIndex::from(23)]);
+        assert!(peer_conn.peers_pieces[PieceIndex::from(42)]);
         assert!(peer_conn.conn_state.peer_interested);
     }
 

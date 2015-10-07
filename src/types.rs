@@ -2,10 +2,28 @@ use bytes::RingBuf;
 use mio::Token;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PieceIndex(pub u32);
+pub struct PieceIndex(u32);
+
+impl From<u32> for PieceIndex {
+    fn from(n: u32) -> PieceIndex {
+        PieceIndex(n)
+    }
+}
+
+impl From<PieceIndex> for u32 {
+    fn from(index: PieceIndex) -> u32 {
+        index.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ConnectionId(pub u32);
+pub struct ConnectionId(u32);
+
+impl From<u32> for ConnectionId {
+    fn from(n: u32) -> ConnectionId {
+        ConnectionId(n)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockRequest {

@@ -91,10 +91,9 @@ impl TorrentInfo {
 
     /// panics when passed an invalid piece index
     pub fn get_piece_length(&self, piece_index: PieceIndex) -> u32 {
-        debug_assert!(self.piece_count() > piece_index.0 as u32);
         min(self.piece_length,
             (self.total_size -
-                (piece_index.0 as u64 * self.piece_length as u64))
+                (u32::from(piece_index) as u64 * self.piece_length as u64))
                 as u32
         )
     }
@@ -113,8 +112,7 @@ impl TorrentInfo {
     }
 
     pub fn get_piece_hash(&self, piece_index: PieceIndex) -> &[u8] {
-        debug_assert!(self.piece_count() > piece_index.0 as u32);
-        let offset = piece_index.0 as usize * 20;
+        let offset = u32::from(piece_index) as usize * 20;
         &self.hashes[offset..offset + 20]
     }
 
@@ -130,7 +128,7 @@ impl TorrentInfo {
         let mut cur_file_handle = first_handle;
         let mut piece_hash = [0;20];
         'pieces: for i in (0u32..self.piece_count()) {
-            let piece_index = PieceIndex(i);
+            let piece_index = PieceIndex::from(i);
             let mut offset_in_piece = 0;
             for file_section in self.map_block(piece_index, 0,
                                         self.get_piece_length(piece_index)) {
@@ -180,7 +178,7 @@ impl TorrentInfo {
     pub fn bytes_left_to_download(&self, pieces: &PieceSet) -> u64 {
         let mut downloaded_bytes =
             (pieces.count() as u64) * (self.piece_length as u64);
-        let last_piece_index = PieceIndex(self.piece_count() - 1);
+        let last_piece_index = PieceIndex::from(self.piece_count() - 1);
         if pieces[last_piece_index] {
             downloaded_bytes -= (self.piece_length -
                                  self.get_piece_length(last_piece_index)) as u64
@@ -234,7 +232,7 @@ impl <'a> FileSectionIter<'a> {
     fn new(piece_index: PieceIndex, offset: u32, length: u32,
            torrent: &'a TorrentInfo) -> FileSectionIter<'a> {
         let mut remaining_offset =
-            piece_index.0 as u64 * torrent.piece_length as u64 + offset as u64;
+            u32::from(piece_index) as u64 * torrent.piece_length as u64 + offset as u64;
         let mut file_index = 0;
         loop {
             let cur_file_length = torrent.files[file_index].length;
@@ -345,13 +343,13 @@ mod tests {
         let mut pieces = PieceSet::new_empty(&torrent);
         assert_eq!(torrent.bytes_left_to_download(&pieces), 10);
 
-        pieces.set_true(PieceIndex(0));
+        pieces.set_true(PieceIndex::from(0));
         assert_eq!(torrent.bytes_left_to_download(&pieces), 7);
 
-        pieces.set_true(PieceIndex(3));
+        pieces.set_true(PieceIndex::from(3));
         assert_eq!(torrent.bytes_left_to_download(&pieces), 6);
 
-        pieces.set_true(PieceIndex(1));
+        pieces.set_true(PieceIndex::from(1));
         assert_eq!(torrent.bytes_left_to_download(&pieces), 3);
     }
 }

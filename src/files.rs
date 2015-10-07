@@ -217,7 +217,7 @@ fn write_message_header<W: io::Write>(writer: &mut W, info: &BlockInfo) {
     let msg_length = info.length + 1 + 4 + 4;
     writer.write_u32::<BigEndian>(msg_length).unwrap();
     writer.write_u8(7).unwrap();
-    writer.write_u32::<BigEndian>(info.piece_index.0).unwrap();
+    writer.write_u32::<BigEndian>(u32::from(info.piece_index)).unwrap();
     writer.write_u32::<BigEndian>(info.offset).unwrap();
 }
 

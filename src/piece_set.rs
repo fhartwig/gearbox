@@ -40,13 +40,13 @@ impl PieceSet {
 
     /// panics if index is out of bounds
     pub fn set_false(&mut self, index: PieceIndex) {
-        self.bitv.set(index.0 as usize, false);
+        self.bitv.set(u32::from(index) as usize, false);
         self.piece_count -= 1;
     }
 
     /// panics if index is out of bounds
     pub fn set_true(&mut self, index: PieceIndex) {
-        self.bitv.set(index.0 as usize, true);
+        self.bitv.set(u32::from(index) as usize, true);
         self.piece_count += 1;
     }
 
@@ -69,7 +69,7 @@ impl PieceSet {
         let randint = thread_rng().gen_range(0, new_pieces);
         let n = self.bitv.iter().zip(&other.bitv).enumerate()
                     .filter(|&(_, t)| t.0 && t.1).nth(randint).unwrap().0;
-        let picked_index = PieceIndex(n as u32);
+        let picked_index = PieceIndex::from(n as u32);
 
         self.set_false(picked_index);
         info!("Picked: {:?}", picked_index);
@@ -89,7 +89,7 @@ impl Index<PieceIndex> for PieceSet {
     type Output = bool;
 
     fn index(&self, index: PieceIndex) -> &bool {
-        &self.bitv[index.0 as usize]
+        &self.bitv[u32::from(index) as usize]
     }
 }
 
@@ -111,9 +111,9 @@ mod tests {
         assert!(to_download.pick_piece_from(&peers_pieces).is_some());
 
         let mut to_download = PieceSet::new_empty(&torrent);
-        to_download.set_true(PieceIndex(0));
+        to_download.set_true(PieceIndex::from(0));
         assert_eq!(to_download.pick_piece_from(&peers_pieces),
-                   Some(PieceIndex(0)));
+                   Some(PieceIndex::from(0)));
         assert!(to_download.pick_piece_from(&peers_pieces).is_none());
     }
 }
