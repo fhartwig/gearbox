@@ -1000,19 +1000,17 @@ impl <'a> PeerEventHandler<'a> {
     }
 
     fn try_accept(&mut self, event_loop: &mut PeerEventLoop) {
-        let conn = match self.listening_sock.accept().unwrap() {
-            Some(connection) => connection,
-            None => return
-        };
-        let peer_conn = HandshakingConnection::new(conn,
-                                                   &self.common_info.torrent,
-                                                   self.own_peer_id);
-        self.connections.insert_with(|tok| {
-            event_loop.register(&peer_conn.sock, tok,
-                                EventSet::readable() | EventSet::writable(),
-                                PollOpt::edge()).unwrap();
-            Connection::Handshaking(peer_conn)
-        });
+        while let Some(conn) = self.listening_sock.accept().unwrap() {
+            let peer_conn =
+                HandshakingConnection::new(conn, &self.common_info.torrent,
+                                           self.own_peer_id);
+            self.connections.insert_with(|tok| {
+                event_loop.register(&peer_conn.sock, tok,
+                                    EventSet::readable() | EventSet::writable(),
+                                    PollOpt::edge()).unwrap();
+                Connection::Handshaking(peer_conn)
+            });
+        }
     }
 
     fn next_conn_id(&mut self) -> ConnectionId {
