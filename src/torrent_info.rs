@@ -127,7 +127,7 @@ impl TorrentInfo {
         let mut cur_file_index = 0;
         let mut cur_file_handle = first_handle;
         let mut piece_hash = [0;20];
-        'pieces: for i in (0u32..self.piece_count()) {
+        'pieces: for i in 0u32..self.piece_count() {
             let piece_index = PieceIndex::from(i);
             let mut offset_in_piece = 0;
             for file_section in self.map_block(piece_index, 0,

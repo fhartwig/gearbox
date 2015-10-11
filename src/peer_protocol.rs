@@ -595,7 +595,7 @@ impl PeerConnection {
 
             let mut bit_offset = 0;
             for &byte in bitfield {
-                for bit_index in (0..8) {
+                for bit_index in 0..8 {
                     let has_piece = (byte >> (7 - bit_index)) & 0x01 == 0x01;
                     if has_piece {
                         self.peers_pieces.set_true(

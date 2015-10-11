@@ -142,7 +142,7 @@ fn make_udp_request(tracker_addr: &SocketAddr, request: &TrackerRequest)
 
     let peers_count = (response.len() as u64 - response_reader.position()) / 6;
     let mut peers = Vec::with_capacity(peers_count as usize);
-    for _ in (0..peers_count) {
+    for _ in 0..peers_count {
         let ip_byte0 = response_reader.read_u8().unwrap();
         let ip_byte1 = response_reader.read_u8().unwrap();
         let ip_byte2 = response_reader.read_u8().unwrap();
