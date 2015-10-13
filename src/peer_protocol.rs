@@ -28,8 +28,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 struct HandshakingConnection<'a> {
     sock: TcpStream,
     recv_buf: Take<MutByteBuf>,
-    send_buf: SliceBuf<'a>,
-    bytes_received: usize
+    send_buf: SliceBuf<'a>
 }
 
 impl <'a> HandshakingConnection<'a> {
@@ -43,7 +42,6 @@ impl <'a> HandshakingConnection<'a> {
                 HANDSHAKE_BYTES_LENGTH
             ),
             send_buf: SliceBuf::wrap(handshake_bytes),
-            bytes_received: 0
         }
     }
 
@@ -60,12 +58,14 @@ impl <'a> HandshakingConnection<'a> {
         match self.sock.try_read_buf(&mut self.recv_buf) {
             Ok(Some(bytes_read)) => {
                 debug!("Read {} bytes", bytes_read);
-                self.bytes_received += bytes_read;
+                Ok(())
             },
             Ok(None) => unreachable!(),
-            Err(e) => {info!("Error reading: {:?}", e); return Err(())}
+            Err(e) => {
+                info!("Error reading: {:?}", e);
+                Err(())
+            }
         }
-        Ok(())
     }
 
     /// return Err(()) on IO error
@@ -81,7 +81,7 @@ impl <'a> HandshakingConnection<'a> {
     /// check whether we have sent and received an entire handshake
     fn handshake_finished(&self) -> bool {
         !Buf::has_remaining(&self.send_buf) &&
-            self.bytes_received >= HANDSHAKE_BYTES_LENGTH
+            self.recv_buf.get_ref().bytes().len() == HANDSHAKE_BYTES_LENGTH
     }
 
     /// finish handshake, creating a new PeerConnection
