@@ -23,7 +23,7 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 
 use bencode::{BValue, FromBValue};
-use peer_protocol::run_event_loop;
+use peer_protocol::{run_event_loop, write_handshake, HANDSHAKE_BYTES_LENGTH};
 use tracker::Tracker;
 use torrent_info::TorrentInfo;
 
@@ -48,6 +48,10 @@ fn main() {
     for b in &mut peer_id {
         *b = rand::random();
     }
+
+    let mut handshake_buf = [0;HANDSHAKE_BYTES_LENGTH];
+    write_handshake(&mut handshake_buf, &peer_id, &torrent_info);
+
     let (disk_reader_request_sender, disk_reader_request_receiver) = channel();
     let (disk_writer_sender, disk_writer_receiver) = channel();
 
@@ -69,7 +73,8 @@ fn main() {
     );
 
     run_event_loop(event_loop, &torrent_info_arc, disk_writer_sender,
-                   disk_reader_request_sender, &peer_id, tracker);
+                   disk_reader_request_sender, &peer_id, tracker,
+                   &handshake_buf);
     reader_guard.join().expect("reader thread panicked");
     writer_guard.join().expect("writer thread panicked");
 }

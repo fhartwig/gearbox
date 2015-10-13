@@ -12,7 +12,7 @@ use types::{BlockInfo, BlockFromDisk, BlockFromPeer, BlockRequest, PieceIndex,
 use piece_set::PieceSet;
 use ui::UI;
 
-use bytes::{Buf, ByteBuf, MutByteBuf, MutBuf, RingBuf, Take};
+use bytes::{Buf, ByteBuf, MutByteBuf, MutBuf, RingBuf, SliceBuf, Take};
 use mio::{self, EventLoop, EventSet, Token, PollOpt, TryRead, TryWrite};
 use mio::tcp::{TcpStream, TcpListener};
 use mio::util::Slab;
@@ -25,41 +25,33 @@ use crypto::digest::Digest;
 
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
-struct HandshakingConnection {
+struct HandshakingConnection<'a> {
     sock: TcpStream,
     recv_buf: Take<MutByteBuf>,
-    send_buf: ByteBuf,
+    send_buf: SliceBuf<'a>,
     bytes_received: usize
 }
 
-impl HandshakingConnection {
-    fn new(sock: TcpStream, torrent: &TorrentInfo, own_id: &[u8])
-            -> HandshakingConnection {
+impl <'a> HandshakingConnection<'a> {
+    fn new(sock: TcpStream, handshake_bytes: &'a [u8])
+            -> HandshakingConnection<'a> {
         debug!("In handshakingConn::new");
-        let mut send_buf = ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH);
-        // TODO: everything we write out here is completely static (within
-            // the same torrent). Maybe we should create this buffer once
-            // and then just do send_buf.write_all(handshake_buf)
-        send_buf.write_slice(
-            b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00");
-        send_buf.write_slice(torrent.info_hash());
-        send_buf.write_slice(own_id);
         HandshakingConnection {
             sock: sock,
             recv_buf: Take::new(
                 ByteBuf::mut_with_capacity(HANDSHAKE_BYTES_LENGTH),
                 HANDSHAKE_BYTES_LENGTH
             ),
-            send_buf: send_buf.flip(),
+            send_buf: SliceBuf::wrap(handshake_bytes),
             bytes_received: 0
         }
     }
 
-    fn open(peer: &PeerInfo, torrent: &TorrentInfo, own_id: &[u8])
-            -> HandshakingConnection {
+    fn open(peer: &PeerInfo, handshake_bytes: &'a [u8])
+            -> HandshakingConnection<'a> {
         debug!("In handshakingConn::open");
         let stream = TcpStream::connect(&SocketAddr::V4(peer.addr)).unwrap();
-        HandshakingConnection::new(stream, torrent, own_id)
+        HandshakingConnection::new(stream, handshake_bytes)
     }
 
     /// return Err(()) on io error
@@ -171,12 +163,12 @@ pub struct PeerConnection {
     outgoing_block_length: Option<u16>,
 }
 
-enum Connection {
+enum Connection<'a> {
     Peer(PeerConnection),
-    Handshaking(HandshakingConnection)
+    Handshaking(HandshakingConnection<'a>)
 }
 
-impl Connection {
+impl <'a> Connection<'a> {
     fn read(&mut self, common: &mut CommonInfo) {
         match *self {
             Connection::Handshaking(ref mut conn) => {
@@ -344,7 +336,7 @@ pub const BLOCK_SIZE: u32 = 1 << 14;
 const RECV_BUF_SIZE: usize = 1 << 15;
 pub const SEND_BUF_SIZE: usize = 1 << 15;
 
-const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
+pub const HANDSHAKE_BYTES_LENGTH: usize = 1 + 19 + 8 + 20 + 20;
 
 const CONCURRENT_REQUESTS_PER_PEER: u8 = 8;
 
@@ -967,21 +959,23 @@ enum HandlerAction {
 
 struct PeerEventHandler<'a> {
     listening_sock: TcpListener,
-    connections: Slab<Connection>,
+    connections: Slab<Connection<'a>>,
     cur_conn_id: u32,
     common_info: CommonInfo<'a>,
     own_peer_id: &'a [u8;20],
     tracker: Tracker,
     ui: UI,
     closed_conns: Vec<Token>,
-    connection_closed: BitVec
+    connection_closed: BitVec,
+    handshake_bytes: &'a [u8]
 }
 
 impl <'a> PeerEventHandler<'a> {
     fn new(sock: TcpListener, torrent: &'a TorrentInfo,
            piece_reader_chan: Sender<PieceReaderMessage>,
            block_writer_chan: Sender<PieceData>,
-           peer_id: &'a[u8;20], tracker: Tracker) -> PeerEventHandler<'a> {
+           peer_id: &'a[u8;20], tracker: Tracker,
+           handshake_bytes: &'a [u8]) -> PeerEventHandler<'a> {
         let our_pieces = torrent.check_downloaded_pieces();
         let common = CommonInfo::new(torrent, our_pieces, piece_reader_chan,
                                      block_writer_chan);
@@ -995,15 +989,15 @@ impl <'a> PeerEventHandler<'a> {
             tracker: tracker,
             ui: UI::init(init_stats),
             closed_conns: Vec::new(),
-            connection_closed: BitVec::from_elem(257, false)
+            connection_closed: BitVec::from_elem(257, false),
+            handshake_bytes: handshake_bytes
         }
     }
 
     fn try_accept(&mut self, event_loop: &mut PeerEventLoop) {
         while let Some(conn) = self.listening_sock.accept().unwrap() {
             let peer_conn =
-                HandshakingConnection::new(conn, &self.common_info.torrent,
-                                           self.own_peer_id);
+                HandshakingConnection::new(conn, &self.handshake_bytes);
             self.connections.insert_with(|tok| {
                 event_loop.register(&peer_conn.sock, tok,
                                     EventSet::readable() | EventSet::writable(),
@@ -1155,12 +1149,12 @@ impl <'a> mio::Handler for PeerEventHandler<'a> {
 pub type PeerEventLoop<'a> = mio::EventLoop<PeerEventHandler<'a>>;
 
 pub const INIT_PEER_CONN_LIMIT: usize = 40;
-fn initiate_peer_connections(event_loop: &mut PeerEventLoop,
-                            peers: &[PeerInfo], torrent: &TorrentInfo,
-                            own_peer_id: &[u8;20],
-                            connections: &mut Slab<Connection>) {
+fn initiate_peer_connections<'a>(event_loop: &mut PeerEventLoop,
+                                 peers: &[PeerInfo],
+                                 connections: &mut Slab<Connection<'a>>,
+                                 handshake_bytes: &'a [u8]) {
     for peer in peers.iter().take(INIT_PEER_CONN_LIMIT) {
-        let conn = HandshakingConnection::open(peer, torrent, own_peer_id);
+        let conn = HandshakingConnection::open(peer, handshake_bytes);
         connections.insert_with(|tok| {
             event_loop.register(&conn.sock, tok,
                                 EventSet::readable() | EventSet::writable(),
@@ -1179,14 +1173,15 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
                       block_writer_chan: Sender<PieceData>,
                       piece_reader_chan: Sender<PieceReaderMessage>,
                       peer_id: &'a [u8;20],
-                      tracker: Tracker) {
+                      tracker: Tracker,
+                      handshake: &'a [u8]) {
     let listening_addr = SocketAddr::V4(SocketAddrV4::new(
         Ipv4Addr::new(0, 0, 0, 0), LISTENING_PORT));
     let listener = TcpListener::bind(&listening_addr).unwrap();
     let mut handler = PeerEventHandler::new(listener, torrent,
                                             piece_reader_chan,
                                             block_writer_chan, peer_id,
-                                            tracker);
+                                            tracker, &handshake);
     let bytes_left_to_download =
         torrent.bytes_left_to_download(&handler.common_info.our_pieces);
     let tracker_request = TrackerRequest {
@@ -1201,10 +1196,18 @@ pub fn run_event_loop<'a>(mut event_loop: PeerEventLoop<'a>,
     let peers = handler.tracker.make_request(&tracker_request).unwrap();
     event_loop.register(&handler.listening_sock, LISTENER_TOKEN,
                             EventSet::readable(), PollOpt::edge()).unwrap();
-    initiate_peer_connections(&mut event_loop, &peers, torrent, peer_id,
-                              &mut handler.connections);
+    initiate_peer_connections(&mut event_loop, &peers, &mut handler.connections,
+                              &handshake);
     event_loop.timeout_ms((), 2_000).unwrap();
     event_loop.run(&mut handler).ok().expect("Error in event_loop.run");
+}
+
+pub fn write_handshake(buf: &mut [u8], peer_id: &[u8], torrent: &TorrentInfo) {
+    use std::io::{Cursor, Write};
+    let mut c = Cursor::new(&mut buf[..]);
+    c.write(b"\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00").unwrap();
+    c.write(torrent.info_hash()).unwrap();
+    c.write(peer_id).unwrap();
 }
 
 #[cfg(test)]
@@ -1268,7 +1271,8 @@ mod tests {
     }
 
     fn mk_peer_event_handler<'a> (torrent: &'a TorrentInfo,
-                                  peer_id: &'a [u8; 20])
+                                  peer_id: &'a [u8; 20],
+                                  handshake: &'a [u8])
         -> (super::PeerEventHandler<'a>,
             Receiver<PieceData>,
             Receiver<PieceReaderMessage>) {
@@ -1288,7 +1292,7 @@ mod tests {
         let handler = PeerEventHandler::new(listener, torrent,
                                             piece_reader_sender,
                                             piece_writer_sender, peer_id,
-                                            tracker);
+                                            tracker, handshake);
         (handler, piece_writer_receiver, piece_reader_receiver)
     }
 
@@ -1298,8 +1302,10 @@ mod tests {
         let (nb_conn, mut peer_conn) = get_socket_pair();
         let our_id = [42;20];
         let peer_id = [23;20];
-        let mut hs_conn =
-            super::HandshakingConnection::new(nb_conn, &torrent, &our_id);
+        let mut handshake = [0;super::HANDSHAKE_BYTES_LENGTH];
+        super::write_handshake(&mut handshake, &our_id, &torrent);
+        let mut hs_conn = super::HandshakingConnection::new(nb_conn,
+                                                            &handshake);
         assert!(!hs_conn.handshake_finished());
         let mut peer_handshake = Vec::new();
         peer_handshake.extend(
