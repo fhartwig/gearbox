@@ -42,7 +42,7 @@ impl RequestQueue {
 
     fn cancel_all_from_peer(&mut self, conn_id: ConnectionId) {
         self.temp_buf.extend(
-            self.requests.drain().filter(|req| req.receiver.id != conn_id)
+            self.requests.drain(..).filter(|req| req.receiver.id != conn_id)
         );
         mem::swap(&mut self.temp_buf, &mut self.requests);
     }

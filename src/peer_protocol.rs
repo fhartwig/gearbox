@@ -444,7 +444,7 @@ impl PeerConnection {
         // TODO: it is possible (in theory, but shouldn't really happen in
             // practice) that the total length of the messages execeeds the
             // capacity of the buffer. we should handle that case
-        for msg in self.outgoing_msgs.drain() {
+        for msg in self.outgoing_msgs.drain(..) {
             debug!("Serialising msg: {:?}", msg);
             msg.serialise(&mut self.send_buf).unwrap();
         }
