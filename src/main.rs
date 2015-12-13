@@ -1,4 +1,4 @@
-#![feature(iter_arith, drain)]
+#![feature(iter_arith)]
 
 extern crate bytes;
 extern crate bit_vec;
