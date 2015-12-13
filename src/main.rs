@@ -1,5 +1,3 @@
-#![feature(iter_arith)]
-
 extern crate bytes;
 extern crate bit_vec;
 extern crate vec_map;

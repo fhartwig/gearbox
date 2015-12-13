@@ -54,7 +54,7 @@ impl TorrentInfo {
     pub fn new(name: String, piece_len: u32, piece_hashes: Vec<u8>,
             files: Vec<FileInfo>, dict_str: &[u8])
             -> Option<TorrentInfo> {
-        let total_size = files.iter().map(|f| f.length).sum();
+        let total_size = files.iter().fold(0, |acc, f| f.length + acc);
         if piece_hashes.len() % 20 != 0 {
             return None
         }

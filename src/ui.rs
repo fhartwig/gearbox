@@ -91,6 +91,6 @@ fn simple_moving_average(history: &mut VecDeque<u64>, new: u64) -> u64 {
         history.pop_front();
     }
     history.push_back(new);
-    let total: u64 = history.iter().sum();
+    let total: u64 = history.iter().fold(0, |acc, &x| acc + x);
     total / history.len() as u64
 }
