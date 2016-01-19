@@ -60,8 +60,7 @@ fn main() {
                                    disk_writer_receiver)
     );
 
-    let event_loop = mio::EventLoop::new().ok()
-            .expect("Error creating event loop");
+    let event_loop = mio::EventLoop::new().expect("Error creating event loop");
     let block_from_disk_sender = event_loop.channel();
     let torrent_info_arc_clone = torrent_info_arc.clone();
     let reader_guard = ::std::thread::spawn(
