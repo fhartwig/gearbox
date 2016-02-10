@@ -3,8 +3,8 @@ use std::str::from_utf8;
 use std::net::Ipv4Addr;
 use std::fmt;
 
-pub use self::ConversionError::*;
-pub use self::ParseError::*;
+use self::ConversionError::*;
+use self::ParseError::*;
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
@@ -157,8 +157,8 @@ impl <'a> Parser<'a> {
     }
 }
 
-#[derive(Debug)]
-enum ParseError {
+#[derive(Debug, Clone, Copy)]
+pub enum ParseError {
     EOF,
     EmptyInput,
     UnexpectedToken(u8)

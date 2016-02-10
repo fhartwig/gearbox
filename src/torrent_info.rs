@@ -187,14 +187,16 @@ impl TorrentInfo {
     }
 }
 
-struct FileSectionIter<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct FileSectionIter<'a> {
     torrent: &'a TorrentInfo,
     cur_file_index: usize,
     cur_file_offset: u64,
     piece_remaining_bytes: u32,
 }
 
-struct FileSection {
+#[derive(Clone, Copy, Debug)]
+pub struct FileSection {
     pub file_index: usize,
     pub offset: u64,
     pub length: u32

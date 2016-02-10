@@ -957,7 +957,7 @@ enum HandlerAction {
 }
 
 
-struct PeerEventHandler<'a> {
+pub struct PeerEventHandler<'a> {
     listening_sock: TcpListener,
     connections: Slab<Connection<'a>>,
     cur_conn_id: u32,
