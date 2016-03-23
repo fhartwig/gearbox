@@ -233,7 +233,7 @@ impl PieceData {
     fn add_block(&mut self, block: BlockFromPeer) {
         debug_assert!(block.info.piece_index == self.index);
         let block_index = block.info.offset / BLOCK_SIZE;
-        debug_assert!(self.blocks.get(&(block_index as usize)).is_none());
+        debug_assert!(self.blocks.get(block_index as usize).is_none());
         self.blocks_received += 1;
         self.blocks.insert(block_index as usize,
                            Take::new(block.data, block.info.length as usize));
@@ -995,7 +995,7 @@ impl <'a> PeerEventHandler<'a> {
     }
 
     fn try_accept(&mut self, event_loop: &mut PeerEventLoop) {
-        while let Some(conn) = self.listening_sock.accept().unwrap() {
+        while let Some((conn, _)) = self.listening_sock.accept().unwrap() {
             let peer_conn =
                 HandshakingConnection::new(conn, &self.handshake_bytes);
             self.connections.insert_with(|tok| {

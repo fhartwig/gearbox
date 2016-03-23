@@ -13,7 +13,10 @@ byteorder = "*"
 time = "*"
 bit-vec = "*"
 vec_map = "*"
-bytes = { git = "https://github.com/carllerche/bytes", rev = "7edb577d0a" }
+slab = "*"
+mio = "*"
+nix = "*"
+bytes = "*"
 
 [dependencies.hyper]
 git = "https://github.com/hyperium/hyper"
@@ -21,12 +24,6 @@ features = ["nightly"]
 
 [dependencies.rust-crypto]
 git = "https://github.com/DaGenix/rust-crypto"
-
-[dependencies.mio]
-git = "https://github.com/carllerche/mio"
-
-[dependencies.nix]
-git = "https://github.com/carllerche/nix-rust"
 
 [dependencies.rustbox]
 git = "https://github.com/gchp/rustbox.git"

@@ -6,7 +6,7 @@ use peer_protocol::CommonInfo;
 use types::Stats;
 
 use rustbox::{self, RustBox, Event, Color, Key};
-use time::Duration;
+use std::time::Duration;
 
 pub struct UI {
     rustbox: RustBox,
@@ -71,10 +71,10 @@ impl UI {
         self.rustbox.present();
 
         loop {
-            match self.rustbox.peek_event(Duration::seconds(0), false) {
+            match self.rustbox.peek_event(Duration::from_secs(0), false) {
                 Ok(Event::NoEvent) => return false,
                 Ok(Event::KeyEvent(key)) => {
-                    if let Some(Key::Char('q')) = key {
+                    if let Key::Char('q') = key {
                         return true;
                     }
                 },
